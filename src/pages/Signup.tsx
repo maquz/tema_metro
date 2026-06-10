@@ -62,7 +62,8 @@ export default function Signup() {
             <img src="/logo.png" alt="GES Logo" style={{ width: '100%', height: '100%', objectFit: 'contain', filter: 'drop-shadow(0 0 2px rgba(255,255,255,0.5))' }} />
           </div>
         </div>
-        <h2 style={{ textAlign: 'center', color: '#002147', marginBottom: '24px', fontSize: '24px', fontWeight: '800' }}>Sign Up</h2>
+        <h2 style={{ textAlign: 'center', color: '#002147', marginBottom: '8px', fontSize: '24px', fontWeight: '800' }}>Sign Up</h2>
+        <p style={{ textAlign: 'center', color: '#6B7280', marginBottom: '24px', fontSize: '14px', fontWeight: '500' }}>Teacher or Metro Staff</p>
         
         {error && <div style={{ backgroundColor: '#FEE2E2', color: '#CE1126', padding: '12px', borderRadius: '8px', marginBottom: '16px', fontSize: '14px', textAlign: 'center' }}>{error}</div>}
         
