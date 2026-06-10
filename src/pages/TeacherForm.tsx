@@ -361,8 +361,8 @@ export default function TeacherForm() {
     ? [['Circuit', form.circuit], ['School', form.school], ['Teacher', form.teacherName], ['Subject', form.subject]]
     : [['Category', form.category], ['Teacher', form.teacherName]];
 
-  // If the user's role is not teacher or metro_officer, show a clean message and a link to admin dashboard or logout
-  if (currentRole !== 'teacher' && currentRole !== 'metro_officer') {
+  // If the user's role is not teacher, metro_officer, admin, or editor, show a clean message and a link to admin dashboard or logout
+  if (currentRole !== 'teacher' && currentRole !== 'metro_officer' && currentRole !== 'admin' && currentRole !== 'editor') {
     return (
       <div style={{ maxWidth: '640px', margin: '0 auto', minHeight: '100vh', backgroundColor: '#F0F4F8', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 20px' }}>
         <div
@@ -458,12 +458,22 @@ export default function TeacherForm() {
               </span>
             </div>
           </div>
-          <button
-            onClick={logout}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'none', border: 'none', color: 'rgba(255, 255, 255, 0.8)', fontSize: '12px', cursor: 'pointer', fontWeight: '500' }}
-          >
-            <LogOut size={14} /> Log Out
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            {(currentRole === 'admin' || currentRole === 'editor') && (
+              <button
+                onClick={() => window.location.href = '/admin'}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255, 255, 255, 0.15)', border: '1px solid rgba(255,255,255,0.2)', padding: '6px 12px', borderRadius: '6px', color: '#FFF', fontSize: '12px', cursor: 'pointer', fontWeight: '600', transition: 'all 0.2s' }}
+              >
+                <ShieldAlert size={14} /> Admin Panel
+              </button>
+            )}
+            <button
+              onClick={logout}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'none', border: 'none', color: 'rgba(255, 255, 255, 0.8)', fontSize: '12px', cursor: 'pointer', fontWeight: '500' }}
+            >
+              <LogOut size={14} /> Log Out
+            </button>
+          </div>
         </div>
 
         <div 
@@ -602,7 +612,7 @@ export default function TeacherForm() {
           </>
         )}
       </div>
-      <Footer />
+      <Footer theme="light" />
     </div>
   );
 }

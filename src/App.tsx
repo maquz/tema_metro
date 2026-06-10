@@ -52,7 +52,14 @@ export default function App() {
       <AuthProvider>
         <Routes>
           {/* Public Landing Page */}
-          <Route path="/" element={<Landing />} />
+          <Route 
+            path="/" 
+            element={
+              <PublicRoute>
+                <Landing />
+              </PublicRoute>
+            } 
+          />
 
           {/* Public Authentication Routes */}
           <Route 

@@ -193,14 +193,24 @@ export default function AdminDashboard() {
               {role}
             </span>
           </div>
-          <button 
-            onClick={logout}
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', border: '1.5px solid rgba(255,255,255,0.2)', backgroundColor: 'transparent', color: '#FFF', fontSize: '13px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s' }}
-            onMouseOver={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'}
-            onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}
-          >
-            <LogOut size={16} /> Log Out
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <button 
+              onClick={() => window.location.href = '/teacher'}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', border: '1.5px solid rgba(255,255,255,0.4)', backgroundColor: 'rgba(255,255,255,0.1)', color: '#FFF', fontSize: '13px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s' }}
+              onMouseOver={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.2)'}
+              onMouseOut={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'}
+            >
+              <FileText size={16} /> Submission Form
+            </button>
+            <button 
+              onClick={logout}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', border: '1.5px solid rgba(255,255,255,0.2)', backgroundColor: 'transparent', color: '#FFF', fontSize: '13px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s' }}
+              onMouseOver={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'}
+              onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}
+            >
+              <LogOut size={16} /> Log Out
+            </button>
+          </div>
         </div>
       </header>
 
@@ -729,7 +739,7 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
-      <Footer />
+      <Footer theme="light" />
     </div>
   );
 }
