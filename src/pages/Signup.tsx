@@ -25,6 +25,8 @@ export default function Signup() {
         role = 'admin';
       } else if (secretCode === 'TEMA_EDITOR_2026') {
         role = 'editor';
+      } else if (secretCode === 'TEMA_METRO_2026') {
+        role = 'metro_officer';
       } else {
         setError('Invalid secret code.');
         setLoading(false);

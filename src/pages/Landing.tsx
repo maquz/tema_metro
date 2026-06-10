@@ -14,6 +14,14 @@ export default function Landing() {
     }
   };
 
+  const handleMetroClick = () => {
+    if (user) {
+      navigate('/teacher');
+    } else {
+      navigate('/login');
+    }
+  };
+
   const handleAdminClick = () => {
     if (user) {
       if (role === 'admin' || role === 'editor') {
@@ -238,7 +246,7 @@ export default function Landing() {
           gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
           gap: '30px',
           width: '100%',
-          maxWidth: '900px',
+          maxWidth: '1200px',
           marginBottom: '50px'
         }}>
           {/* Teacher Card */}
@@ -300,12 +308,81 @@ export default function Landing() {
               <h2 style={{ fontSize: '20px', fontWeight: '800', color: '#FFFFFF', margin: '0 0 10px' }}>Teacher Portal</h2>
               <p style={{ fontSize: '14px', color: '#A0AEC0', lineHeight: '1.5', margin: '0 0 24px' }}>
                 Upload or capture photos of your required document files (Appointment, Personal Record, Certificates, Promotion letters). 
-                Rotate and crop image scans directly before secure filing.
+                Designed for Teachers to securely file documents with the school and circuit details.
               </p>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#4FA3FF', fontSize: '14px', fontWeight: '700' }}>
-              {user && role === 'teacher' ? 'Go to Submission Form' : 'Log In to Teacher Portal'} 
+              {user && role === 'teacher' ? 'Go to Submission Form' : 'Log In as Teacher'} 
+              <ArrowRight size={16} />
+            </div>
+          </div>
+
+          {/* Metro Officer Card */}
+          <div 
+            onClick={handleMetroClick}
+            style={{
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1.5px solid rgba(255, 255, 255, 0.06)',
+              borderRadius: '20px',
+              padding: '32px',
+              cursor: 'pointer',
+              transition: 'all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              boxShadow: '0 8px 30px rgba(0,0,0,0.3)',
+              position: 'relative',
+              overflow: 'hidden'
+            }}
+            onMouseOver={e => {
+              e.currentTarget.style.transform = 'translateY(-5px)';
+              e.currentTarget.style.borderColor = 'rgba(252, 209, 22, 0.8)';
+              e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+            }}
+            onMouseOut={e => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.06)';
+              e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.03)';
+            }}
+          >
+            {/* Top-Right Ambient Glow */}
+            <div style={{
+              position: 'absolute',
+              top: '-30px',
+              right: '-30px',
+              width: '100px',
+              height: '100px',
+              borderRadius: '50%',
+              backgroundColor: 'rgba(252, 209, 22, 0.15)',
+              filter: 'blur(20px)',
+              pointerEvents: 'none'
+            }} />
+
+            <div>
+              <div style={{
+                width: '56px',
+                height: '56px',
+                borderRadius: '14px',
+                backgroundColor: 'rgba(252, 209, 22, 0.15)',
+                border: '1.5px solid rgba(252, 209, 22, 0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#FCD116',
+                marginBottom: '24px'
+              }}>
+                <FileText size={26} />
+              </div>
+              <h2 style={{ fontSize: '20px', fontWeight: '800', color: '#FFFFFF', margin: '0 0 10px' }}>Metro Officer Portal</h2>
+              <p style={{ fontSize: '14px', color: '#A0AEC0', lineHeight: '1.5', margin: '0 0 24px' }}>
+                Upload or capture photos of required documents specifically for the Education Office. 
+                Auto-filed under the Metro Officer directory for fast processing.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#FCD116', fontSize: '14px', fontWeight: '700' }}>
+              {user && role === 'metro_officer' ? 'Go to Submission Form' : 'Log In as Metro Officer'} 
               <ArrowRight size={16} />
             </div>
           </div>
@@ -409,7 +486,8 @@ export default function Landing() {
         marginTop: 'auto',
         zIndex: 10
       }}>
-        Ghana Education Service — Tema Metro Directorate © 2026. All rights reserved.
+        Ghana Education Service — Tema Metro Directorate © 2026. All rights reserved.<br/>
+        Developed by Mark Anibrika ICT Coordinator (Tema Metro)
       </footer>
     </div>
   );

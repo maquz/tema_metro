@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { CheckCircle, ChevronDown, User, FileText, Upload, Send, X, LogOut, ShieldAlert } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
@@ -222,6 +222,16 @@ export default function TeacherForm() {
   const [files, setFiles] = useState<File[][]>(DOCUMENTS.map(() => []));
   const [submitting, setSubmitting] = useState(false);
 
+  const currentRole = role || 'teacher'; // Fallback for old users without roles
+
+  useEffect(() => {
+    if (currentRole === 'teacher') {
+      setForm(f => ({ ...f, category: 'School' }));
+    } else if (currentRole === 'metro_officer') {
+      setForm(f => ({ ...f, category: 'Education Office' }));
+    }
+  }, [currentRole]);
+
   const isEducationOffice = form.category === 'Education Office';
   const isSchool = form.category === 'School';
 
@@ -291,8 +301,8 @@ export default function TeacherForm() {
         const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
         const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
         
-        if (!cloudName || !uploadPreset) {
-          throw new Error('Cloudinary configuration missing in .env');
+        if (!cloudName || !uploadPreset || cloudName === 'your_cloudinary_cloud_name') {
+          throw new Error('MISSING_CLOUDINARY_CONFIG');
         }
 
         const formData = new FormData();
@@ -336,9 +346,13 @@ export default function TeacherForm() {
 
       setSubmitting(false);
       setStep('success');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error submitting form:', error);
-      alert('There was an error submitting your form. Please try again.');
+      if (error.message === 'MISSING_CLOUDINARY_CONFIG') {
+        alert('Configuration Error: Cloudinary settings are missing. Please update VITE_CLOUDINARY_CLOUD_NAME and VITE_CLOUDINARY_UPLOAD_PRESET in your .env file.');
+      } else {
+        alert('There was an error submitting your form. Please ensure you are connected to the internet and try again. Contact the admin if the issue persists.');
+      }
       setSubmitting(false);
     }
   };
@@ -347,8 +361,8 @@ export default function TeacherForm() {
     ? [['Circuit', form.circuit], ['School', form.school], ['Teacher', form.teacherName], ['Subject', form.subject]]
     : [['Category', form.category], ['Teacher', form.teacherName]];
 
-  // If the user's role is not teacher, show a clean message and a link to admin dashboard or logout
-  if (role && role !== 'teacher') {
+  // If the user's role is not teacher or metro_officer, show a clean message and a link to admin dashboard or logout
+  if (currentRole !== 'teacher' && currentRole !== 'metro_officer') {
     return (
       <div style={{ maxWidth: '640px', margin: '0 auto', minHeight: '100vh', backgroundColor: '#F0F4F8', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 20px' }}>
         <div
@@ -364,7 +378,7 @@ export default function TeacherForm() {
         <h2 style={{ fontSize: '20px', fontWeight: '800', color: '#111827', margin: '0 0 8px', textAlign: 'center' }}>Access Denied</h2>
         <p style={{ fontSize: '14px', color: '#6B7280', textAlign: 'center', margin: '0 0 28px', lineHeight: '1.6' }}>
           You are signed in as an <strong>{role.toUpperCase()}</strong>.<br />
-          Only users with the <strong>Teacher</strong> role can submit records.
+          Only <strong>Teacher</strong> and <strong>Metro Officer</strong> roles can submit records.
         </p>
         <div style={{ display: 'flex', gap: '12px' }}>
           <button
@@ -405,19 +419,19 @@ export default function TeacherForm() {
         <p style={{ fontSize: '14px', color: '#6B7280', textAlign: 'center', margin: '0 0 8px', lineHeight: '1.6' }}>
           Your documents have been submitted to the<br />GES Tema Metro Education Directorate.
         </p>
-        <p style={{ fontSize: '12px', color: '#9CA3AF', textAlign: 'center', margin: '0 0 32px' }}>Files have been named and filed with your teacher name as prefix.</p>
+        <p style={{ fontSize: '14px', color: '#6B7280', textAlign: 'center', margin: '0 0 32px' }}>Would you like to upload another teacher's data or log off?</p>
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
           <button
-            onClick={() => { setStep('form'); setForm({ category: '', circuit: '', school: '', teacherName: '', sex: '', subject: 'English' }); setFiles(DOCUMENTS.map(() => [])); }}
+            onClick={() => { setStep('form'); setForm(f => ({ ...f, circuit: '', school: '', teacherName: '', sex: '', subject: 'English' })); setFiles(DOCUMENTS.map(() => [])); }}
             style={{ padding: '13px 28px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #002147, #001530)', color: '#FFFFFF', fontSize: '14px', fontWeight: '700', cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,33,71,0.3)' }}
           >
-            Submit Another Record
+            Upload another teacher's data
           </button>
           <button
-            onClick={() => window.location.href = '/'}
+            onClick={logout}
             style={{ padding: '13px 28px', borderRadius: '12px', border: '1.5px solid #D1D5DB', backgroundColor: '#FFFFFF', color: '#374151', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}
           >
-            Return to Home
+            Log Off
           </button>
         </div>
       </div>
@@ -440,7 +454,7 @@ export default function TeacherForm() {
             <div style={{ fontSize: '12px', color: '#FFF' }}>
               <span style={{ fontWeight: '600' }}>{user?.email}</span>
               <span style={{ fontSize: '10px', backgroundColor: '#CE1126', color: '#FFF', padding: '2px 6px', borderRadius: '4px', marginLeft: '6px', textTransform: 'uppercase', fontWeight: 'bold' }}>
-                {role}
+                {currentRole === 'metro_officer' ? 'Education Officer' : currentRole === 'teacher' ? 'Teacher' : currentRole}
               </span>
             </div>
           </div>
@@ -475,7 +489,7 @@ export default function TeacherForm() {
           ))}
         </div>
         <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', marginTop: '6px', position: 'relative' }}>
-          {step === 'form' ? 'Step 1 of 2 — Teacher Information' : 'Step 2 of 2 — Documents Checklist'}
+          {step === 'form' ? `Step 1 of 2 — ${currentRole === 'metro_officer' ? 'Education Officer' : 'Teacher'} Information` : 'Step 2 of 2 — Documents Checklist'}
         </div>
       </div>
 
@@ -485,11 +499,11 @@ export default function TeacherForm() {
             <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: '16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px' }}>
                 <User size={16} color="#002147" />
-                <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>Teacher Details</span>
+                <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{currentRole === 'metro_officer' ? 'Education Officer' : 'Teacher Details'}</span>
               </div>
-              <SelectField label="Category" value={form.category} onChange={set('category')} options={CATEGORIES} placeholder="— Select Category —" />
-              {errors.category && <p style={{ color: '#CE1126', fontSize: '12px', margin: '-12px 0 12px' }}>{errors.category}</p>}
-
+              
+              {/* Note: The category is auto-assigned based on role, so we don't display the dropdown */}
+              
               {isEducationOffice && (
                 <>
                   <InputField label="Teacher Name" value={form.teacherName} onChange={set('teacherName')} placeholder="Enter full name" />
@@ -512,19 +526,13 @@ export default function TeacherForm() {
                 </>
               )}
 
-              {!form.category && (
-                <p style={{ fontSize: '12px', color: '#9CA3AF', margin: '4px 0 0', textAlign: 'center' }}>Select a category to continue</p>
-              )}
-            </div>
-
-            {form.category && (
               <button
                 onClick={handleProceed}
-                style={{ width: '100%', padding: '15px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #002147, #001530)', color: '#FFFFFF', fontSize: '15px', fontWeight: '700', cursor: 'pointer', letterSpacing: '0.02em' }}
+                style={{ width: '100%', padding: '15px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #002147, #001530)', color: '#FFFFFF', fontSize: '15px', fontWeight: '700', cursor: 'pointer', letterSpacing: '0.02em', marginTop: '16px' }}
               >
                 Proceed to Documents →
               </button>
-            )}
+            </div>
           </>
         ) : (
           <>
