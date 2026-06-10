@@ -5,6 +5,7 @@ import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import ImageCropperModal from '../components/ImageCropperModal';
+import Footer from '../components/Footer';
 
 const CIRCUITS = [
   'ASHAMANG', 'AWUDUM', 'COMMUNITY 11/REDEMPTION VALLEY', 'COMMUNITY 7/REPUBLIC ROAD',
@@ -438,7 +439,7 @@ export default function TeacherForm() {
   }
 
   return (
-    <div style={{ maxWidth: '640px', margin: '0 auto', minHeight: '100vh', backgroundColor: '#F0F4F8' }}>
+    <div style={{ maxWidth: '640px', margin: '0 auto', minHeight: '100vh', backgroundColor: '#F0F4F8', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
       <div style={{ background: 'linear-gradient(135deg, #002147 0%, #001530 100%)', padding: '24px 20px 20px', position: 'relative', overflow: 'hidden' }}>
         <div style={{ position: 'absolute', top: '-20px', right: '-20px', width: '120px', height: '120px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.06)' }} />
@@ -601,6 +602,7 @@ export default function TeacherForm() {
           </>
         )}
       </div>
+      <Footer />
     </div>
   );
 }

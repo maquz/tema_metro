@@ -3,9 +3,10 @@ import { db } from '../firebase';
 import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import Papa from 'papaparse';
+import Footer from '../components/Footer';
 import { 
   LogOut, Users, FileText, Activity, Search, Download, 
-  ChevronRight, ExternalLink
+  ChevronRight, ExternalLink, BarChart3, TrendingUp, GraduationCap, Building2, ShieldCheck
 } from 'lucide-react';
 
 const CIRCUITS = [
@@ -23,7 +24,7 @@ const DOCUMENTS = [
 
 export default function AdminDashboard() {
   const { user, role, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState<'submissions' | 'users'>('submissions');
+  const [activeTab, setActiveTab] = useState<'submissions' | 'users' | 'analytics'>('submissions');
   
   // Data States
   const [submissions, setSubmissions] = useState<any[]>([]);
@@ -218,6 +219,12 @@ export default function AdminDashboard() {
               style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', border: 'none', backgroundColor: activeTab === 'users' ? '#002147' : 'transparent', color: activeTab === 'users' ? '#FFFFFF' : '#4B5563', fontWeight: '600', fontSize: '14px', cursor: 'pointer', transition: 'all 0.2s' }}
             >
               <Users size={16} /> User Presence & Roles
+            </button>
+            <button
+              onClick={() => setActiveTab('analytics')}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', border: 'none', backgroundColor: activeTab === 'analytics' ? '#002147' : 'transparent', color: activeTab === 'analytics' ? '#FFFFFF' : '#4B5563', fontWeight: '600', fontSize: '14px', cursor: 'pointer', transition: 'all 0.2s' }}
+            >
+              <BarChart3 size={16} /> App Analytics
             </button>
           </div>
 
@@ -422,10 +429,18 @@ export default function AdminDashboard() {
                         <td style={{ padding: '16px 24px' }}>
                           <span style={{
                             fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', padding: '3px 8px', borderRadius: '4px',
-                            backgroundColor: u.role === 'admin' ? '#FEE2E2' : u.role === 'editor' ? '#ECFDF5' : '#F3F4F6',
-                            color: u.role === 'admin' ? '#991B1B' : u.role === 'editor' ? '#065F46' : '#374151'
+                            backgroundColor:
+                              u.role === 'admin' ? '#FEE2E2'
+                              : u.role === 'editor' ? '#ECFDF5'
+                              : u.role === 'metro_officer' ? '#FEF3C7'
+                              : '#EFF6FF',
+                            color:
+                              u.role === 'admin' ? '#991B1B'
+                              : u.role === 'editor' ? '#065F46'
+                              : u.role === 'metro_officer' ? '#92400E'
+                              : '#1D4ED8'
                           }}>
-                            {u.role || 'teacher'}
+                            {u.role === 'metro_officer' ? 'Metro Officer' : u.role || 'teacher'}
                           </span>
                         </td>
                         <td style={{ padding: '16px 24px' }}>
@@ -451,6 +466,7 @@ export default function AdminDashboard() {
                               style={{ padding: '6px 10px', borderRadius: '6px', border: '1.5px solid #D1D5DB', fontSize: '12px', fontWeight: '600', cursor: u.id === user?.uid ? 'not-allowed' : 'pointer', outline: 'none' }}
                             >
                               <option value="teacher">Teacher</option>
+                              <option value="metro_officer">Metro Officer</option>
                               <option value="editor">Editor</option>
                               <option value="admin">Admin</option>
                             </select>
@@ -464,6 +480,131 @@ export default function AdminDashboard() {
             </div>
           </div>
         )}
+
+        {/* Tab CONTENT 3: APP ANALYTICS */}
+        {activeTab === 'analytics' && (() => {
+          const schoolSubs = submissions.filter((s: any) => s.category === 'School').length;
+          const officeSubs = submissions.filter((s: any) => s.category === 'Education Office').length;
+          const teacherCount = users.filter((u: any) => !u.role || u.role === 'teacher').length;
+          const metroCount = users.filter((u: any) => u.role === 'metro_officer').length;
+          const adminCount = users.filter((u: any) => u.role === 'admin' || u.role === 'editor').length;
+
+          const circuitMap: Record<string, number> = {};
+          submissions.forEach((s: any) => {
+            if (s.circuit) circuitMap[s.circuit] = (circuitMap[s.circuit] || 0) + 1;
+          });
+          const circuitEntries = Object.entries(circuitMap).sort((a, b) => b[1] - a[1]);
+          const maxCircuit = circuitEntries[0]?.[1] || 1;
+
+          const submitterMap: Record<string, number> = {};
+          submissions.forEach((s: any) => {
+            if (s.submittedByEmail) submitterMap[s.submittedByEmail] = (submitterMap[s.submittedByEmail] || 0) + 1;
+          });
+          const topSubmitters = Object.entries(submitterMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+          const maxSubmitter = topSubmitters[0]?.[1] || 1;
+
+          const kpiCard = (icon: React.ReactNode, label: string, value: string | number, accent: string, sub?: string) => (
+            <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '20px 24px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', borderLeft: `4px solid ${accent}`, display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <div style={{ width: '48px', height: '48px', borderRadius: '12px', backgroundColor: `${accent}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: accent, flexShrink: 0 }}>{icon}</div>
+              <div>
+                <div style={{ fontSize: '11px', fontWeight: '700', color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
+                <div style={{ fontSize: '28px', fontWeight: '900', color: '#002147', lineHeight: '1.2' }}>{value}</div>
+                {sub && <div style={{ fontSize: '11px', color: '#9CA3AF', marginTop: '2px' }}>{sub}</div>}
+              </div>
+            </div>
+          );
+
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              {/* KPI Cards */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+                {kpiCard(<TrendingUp size={22} />, 'Total Submissions', totalSubmissions, '#002147', 'all time')}
+                {kpiCard(<FileText size={22} />, 'School Records', schoolSubs, '#0369A1', `${totalSubmissions ? Math.round(schoolSubs / totalSubmissions * 100) : 0}% of total`)}
+                {kpiCard(<Building2 size={22} />, 'Education Office', officeSubs, '#B45309', `${totalSubmissions ? Math.round(officeSubs / totalSubmissions * 100) : 0}% of total`)}
+                {kpiCard(<Users size={22} />, 'Registered Users', totalUsers, '#065F46', `${activeUsersCount} currently online`)}
+              </div>
+
+              {/* User Role Breakdown */}
+              <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
+                  <Users size={18} color="#002147" />
+                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#002147' }}>User Role Breakdown</h3>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px' }}>
+                  {[
+                    { label: 'Teachers', count: teacherCount, icon: <GraduationCap size={20} />, color: '#1D4ED8', bg: '#EFF6FF' },
+                    { label: 'Metro Officers', count: metroCount, icon: <Building2 size={20} />, color: '#92400E', bg: '#FEF3C7' },
+                    { label: 'Admins / Editors', count: adminCount, icon: <ShieldCheck size={20} />, color: '#991B1B', bg: '#FEE2E2' },
+                  ].map(({ label, count, icon, color, bg }) => (
+                    <div key={label} style={{ backgroundColor: bg, borderRadius: '12px', padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{ color }}>{icon}</div>
+                      <div>
+                        <div style={{ fontSize: '22px', fontWeight: '900', color }}>{count}</div>
+                        <div style={{ fontSize: '12px', fontWeight: '600', color, opacity: 0.75 }}>{label}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Submissions by Circuit */}
+              {circuitEntries.length > 0 && (
+                <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
+                    <BarChart3 size={18} color="#002147" />
+                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#002147' }}>Submissions by Circuit</h3>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {circuitEntries.map(([circuit, count]) => (
+                      <div key={circuit}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '13px', fontWeight: '600', color: '#374151' }}>{circuit}</span>
+                          <span style={{ fontSize: '13px', fontWeight: '800', color: '#002147' }}>{count}</span>
+                        </div>
+                        <div style={{ height: '10px', backgroundColor: '#F3F4F6', borderRadius: '99px', overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${(count / maxCircuit) * 100}%`, background: 'linear-gradient(90deg, #002147, #0047AB)', borderRadius: '99px' }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Top Submitters */}
+              {topSubmitters.length > 0 && (
+                <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
+                    <Activity size={18} color="#002147" />
+                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#002147' }}>Top 5 Submitters</h3>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {topSubmitters.map(([email, count], idx) => (
+                      <div key={email}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', alignItems: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ width: '20px', height: '20px', borderRadius: '50%', backgroundColor: idx === 0 ? '#FCD116' : '#F3F4F6', color: idx === 0 ? '#002147' : '#6B7280', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: '800', flexShrink: 0 }}>{idx + 1}</span>
+                            <span style={{ fontSize: '13px', color: '#374151', fontWeight: '500' }}>{email}</span>
+                          </div>
+                          <span style={{ fontSize: '13px', fontWeight: '800', color: '#002147', flexShrink: 0 }}>{count} {count === 1 ? 'record' : 'records'}</span>
+                        </div>
+                        <div style={{ height: '8px', backgroundColor: '#F3F4F6', borderRadius: '99px', overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${(count / maxSubmitter) * 100}%`, background: idx === 0 ? 'linear-gradient(90deg, #FCD116, #F59E0B)' : 'linear-gradient(90deg, #002147, #0047AB)', borderRadius: '99px' }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {submissions.length === 0 && (
+                <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '60px', textAlign: 'center', color: '#9CA3AF', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                  <BarChart3 size={48} style={{ margin: '0 auto 12px', opacity: 0.3 }} />
+                  <p style={{ margin: 0, fontWeight: '600' }}>No data yet — analytics will appear once submissions are recorded.</p>
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* VIEW DOCUMENTS MODAL */}
@@ -588,6 +729,7 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+      <Footer />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { Link, useNavigate } from 'react-router-dom';
 import { Lock, Mail, Key } from 'lucide-react';
+import Footer from '../components/Footer';
 
 export default function Signup() {
   const [email, setEmail] = useState('');
@@ -51,52 +52,107 @@ export default function Signup() {
   };
 
   return (
-    <div style={{ maxWidth: '400px', margin: '40px auto', padding: '20px' }}>
-      <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '32px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}>
-          <div 
-            onClick={() => window.location.href = '/'}
-            style={{ width: '64px', height: '64px', borderRadius: '50%', backgroundColor: '#002147', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2px', cursor: 'pointer' }}
-            title="Click to Refresh & Return to Landing Page"
-          >
-            <img src="/logo.png" alt="GES Logo" style={{ width: '100%', height: '100%', objectFit: 'contain', filter: 'drop-shadow(0 0 2px rgba(255,255,255,0.5))' }} />
-          </div>
-        </div>
-        <h2 style={{ textAlign: 'center', color: '#002147', marginBottom: '8px', fontSize: '24px', fontWeight: '800' }}>Sign Up</h2>
-        <p style={{ textAlign: 'center', color: '#6B7280', marginBottom: '24px', fontSize: '14px', fontWeight: '500' }}>Teacher or Metro Staff</p>
-        
-        {error && <div style={{ backgroundColor: '#FEE2E2', color: '#CE1126', padding: '12px', borderRadius: '8px', marginBottom: '16px', fontSize: '14px', textAlign: 'center' }}>{error}</div>}
-        
-        <form onSubmit={handleSignup}>
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '6px', textTransform: 'uppercase' }}>Email</label>
-            <div style={{ position: 'relative' }}>
-              <Mail size={18} color="#9CA3AF" style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} required style={{ width: '100%', padding: '12px 14px 12px 40px', borderRadius: '10px', border: '1.5px solid #D1D5DB', fontSize: '14px', outline: 'none' }} placeholder="Enter your email" />
+    <div
+      style={{
+        minHeight: '100vh',
+        backgroundColor: '#020B1E',
+        display: 'flex',
+        flexDirection: 'column',
+        fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      }}
+    >
+      {/* Ghana colour strip */}
+      <div style={{ height: '4px', width: '100%', display: 'flex', flexShrink: 0 }}>
+        <div style={{ flex: 1, backgroundColor: '#CE1126' }} />
+        <div style={{ flex: 1, backgroundColor: '#FCD116' }} />
+        <div style={{ flex: 1, backgroundColor: '#006B3F' }} />
+      </div>
+
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px' }}>
+        <div
+          style={{
+            width: '100%',
+            maxWidth: '420px',
+            backgroundColor: 'rgba(255,255,255,0.04)',
+            border: '1.5px solid rgba(255,255,255,0.08)',
+            borderRadius: '20px',
+            padding: '36px 32px',
+            boxShadow: '0 24px 48px rgba(0,0,0,0.4)',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
+            <div
+              onClick={() => (window.location.href = '/')}
+              title="Click to Refresh & Return to Landing Page"
+              style={{
+                width: '72px',
+                height: '72px',
+                borderRadius: '50%',
+                backgroundColor: '#FFFFFF',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '3px',
+                cursor: 'pointer',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+              }}
+            >
+              <img src="/logo.png" alt="GES Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
             </div>
           </div>
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '6px', textTransform: 'uppercase' }}>Password</label>
-            <div style={{ position: 'relative' }}>
-              <Lock size={18} color="#9CA3AF" style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} required style={{ width: '100%', padding: '12px 14px 12px 40px', borderRadius: '10px', border: '1.5px solid #D1D5DB', fontSize: '14px', outline: 'none' }} placeholder="Min 6 characters" />
+
+          <h1 style={{ textAlign: 'center', color: '#FFFFFF', marginBottom: '8px', fontSize: '26px', fontWeight: '800', letterSpacing: '-0.02em' }}>Sign Up</h1>
+          <p style={{ textAlign: 'center', color: 'rgba(255,255,255,0.45)', marginBottom: '24px', fontSize: '14px', fontWeight: '500' }}>Teacher or Metro Staff</p>
+
+          {error && (
+            <div style={{ backgroundColor: 'rgba(206,17,38,0.15)', border: '1px solid rgba(206,17,38,0.3)', color: '#FF8A8A', padding: '12px 16px', borderRadius: '10px', marginBottom: '16px', fontSize: '13px', lineHeight: '1.5', textAlign: 'center' }}>
+              {error}
             </div>
-          </div>
-          <div style={{ marginBottom: '24px' }}>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '6px', textTransform: 'uppercase' }}>Admin Secret Code (Optional)</label>
-            <div style={{ position: 'relative' }}>
-              <Key size={18} color="#9CA3AF" style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
-              <input type="text" value={secretCode} onChange={e => setSecretCode(e.target.value)} style={{ width: '100%', padding: '12px 14px 12px 40px', borderRadius: '10px', border: '1.5px solid #D1D5DB', fontSize: '14px', outline: 'none' }} placeholder="Leave blank if you are a teacher" />
+          )}
+
+          <form onSubmit={handleSignup}>
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'rgba(255,255,255,0.5)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Email</label>
+              <div style={{ position: 'relative' }}>
+                <Mail size={16} color="rgba(255,255,255,0.3)" style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
+                  style={{ width: '100%', padding: '13px 14px 13px 42px', borderRadius: '10px', border: '1.5px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.05)', fontSize: '14px', color: '#FFFFFF', outline: 'none', boxSizing: 'border-box' }}
+                  placeholder="Enter your email" />
+              </div>
             </div>
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'rgba(255,255,255,0.5)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Password</label>
+              <div style={{ position: 'relative' }}>
+                <Lock size={16} color="rgba(255,255,255,0.3)" style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)} required
+                  style={{ width: '100%', padding: '13px 14px 13px 42px', borderRadius: '10px', border: '1.5px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.05)', fontSize: '14px', color: '#FFFFFF', outline: 'none', boxSizing: 'border-box' }}
+                  placeholder="Min 6 characters" />
+              </div>
+            </div>
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'rgba(255,255,255,0.5)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Admin / Metro Secret Code <span style={{ color: 'rgba(255,255,255,0.25)', fontWeight: '500' }}>(Optional)</span></label>
+              <div style={{ position: 'relative' }}>
+                <Key size={16} color="rgba(255,255,255,0.3)" style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
+                <input type="text" value={secretCode} onChange={e => setSecretCode(e.target.value)}
+                  style={{ width: '100%', padding: '13px 14px 13px 42px', borderRadius: '10px', border: '1.5px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.05)', fontSize: '14px', color: '#FFFFFF', outline: 'none', boxSizing: 'border-box' }}
+                  placeholder="Leave blank if you are a teacher" />
+              </div>
+            </div>
+            <button disabled={loading}
+              style={{ width: '100%', padding: '14px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #002147, #001530)', color: '#FFFFFF', fontSize: '15px', fontWeight: '700', cursor: loading ? 'not-allowed' : 'pointer' }}
+            >
+              {loading ? 'Creating account…' : 'Sign Up'}
+            </button>
+          </form>
+
+          <div style={{ marginTop: '20px', textAlign: 'center', fontSize: '13px', color: 'rgba(255,255,255,0.35)' }}>
+            Already have an account?{' '}
+            <Link to="/login" style={{ color: '#4FA3FF', fontWeight: '700', textDecoration: 'none' }}>Log In</Link>
           </div>
-          <button disabled={loading} style={{ width: '100%', padding: '14px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #002147, #001530)', color: '#FFFFFF', fontSize: '15px', fontWeight: '700', cursor: loading ? 'not-allowed' : 'pointer' }}>
-            {loading ? 'Creating account...' : 'Sign Up'}
-          </button>
-        </form>
-        <div style={{ marginTop: '20px', textAlign: 'center', fontSize: '14px', color: '#6B7280' }}>
-          Already have an account? <Link to="/login" style={{ color: '#002147', fontWeight: '600', textDecoration: 'none' }}>Log In</Link>
         </div>
       </div>
+
+      <Footer />
     </div>
   );
 }

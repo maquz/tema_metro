@@ -1,6 +1,7 @@
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { FileText, Shield, LogOut, ArrowRight, UserCheck } from 'lucide-react';
+import Footer from '../components/Footer';
 
 export default function Landing() {
   const { user, role, logout } = useAuth();
@@ -10,7 +11,7 @@ export default function Landing() {
     if (user) {
       navigate('/teacher');
     } else {
-      navigate('/login');
+      navigate('/login?role=teacher');
     }
   };
 
@@ -22,7 +23,7 @@ export default function Landing() {
         navigate('/teacher');
       }
     } else {
-      navigate('/login');
+      navigate('/login?role=metro_officer');
     }
   };
 
@@ -34,7 +35,7 @@ export default function Landing() {
         alert('Access Denied: You do not have administrator permissions.');
       }
     } else {
-      navigate('/login');
+      navigate('/login?role=admin');
     }
   };
 
@@ -482,19 +483,7 @@ export default function Landing() {
         </div>
       </main>
 
-      {/* Footer */}
-      <footer style={{
-        padding: '24px 40px',
-        textAlign: 'center',
-        fontSize: '12px',
-        color: '#718096',
-        borderTop: '1px solid rgba(255, 255, 255, 0.05)',
-        marginTop: 'auto',
-        zIndex: 10
-      }}>
-        Ghana Education Service — Tema Metro Directorate © 2026. All rights reserved.<br/>
-        Developed by Mark Anibrika ICT Coordinator (Tema Metro)
-      </footer>
+      <Footer />
     </div>
   );
 }
