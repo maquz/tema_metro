@@ -19,6 +19,8 @@ function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode;
   if (allowedRoles && role && !allowedRoles.includes(role)) {
     if (role === 'teacher') {
       return <Navigate to="/teacher" replace />;
+    } else if (role === 'metro_officer') {
+      return <Navigate to="/metro" replace />;
     } else {
       return <Navigate to="/admin" replace />;
     }
@@ -34,6 +36,9 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
   if (user) {
     if (role === 'admin' || role === 'editor') {
       return <Navigate to="/admin" replace />;
+    }
+    if (role === 'metro_officer') {
+      return <Navigate to="/metro" replace />;
     }
     return <Navigate to="/teacher" replace />;
   }
@@ -72,6 +77,14 @@ export default function App() {
             path="/teacher" 
             element={
               <ProtectedRoute allowedRoles={['teacher']}>
+                <TeacherForm />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/metro" 
+            element={
+              <ProtectedRoute allowedRoles={['metro_officer']}>
                 <TeacherForm />
               </ProtectedRoute>
             } 

@@ -16,7 +16,11 @@ export default function Landing() {
 
   const handleMetroClick = () => {
     if (user) {
-      navigate('/teacher');
+      if (role === 'metro_officer') {
+        navigate('/metro');
+      } else {
+        navigate('/teacher');
+      }
     } else {
       navigate('/login');
     }
@@ -119,7 +123,9 @@ export default function Landing() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', fontSize: '12px' }}>
               <span style={{ color: 'rgba(255, 255, 255, 0.8)', fontWeight: '600' }}>{user.email}</span>
-              <span style={{ color: '#FCD116', textTransform: 'uppercase', fontWeight: 'bold', fontSize: '9px', marginTop: '2px' }}>Role: {role}</span>
+              <span style={{ color: '#FCD116', textTransform: 'uppercase', fontWeight: 'bold', fontSize: '9px', marginTop: '2px' }}>
+                Role: {role === 'metro_officer' ? 'Education Officer' : role === 'teacher' ? 'Teacher' : role}
+              </span>
             </div>
             <button
               onClick={logout}

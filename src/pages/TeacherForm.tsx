@@ -45,7 +45,6 @@ const SCHOOLS: Record<string, string[]> = {
   ],
 };
 
-const CATEGORIES = ['Education Office', 'School'];
 const SUBJECTS = [
   'English', 'Mathematics', 'Science', 'Social Studies', 'ICT', 'French',
   'RME', 'Creative Arts', 'Ghanaian Language', 'Physical Education'
@@ -377,7 +376,7 @@ export default function TeacherForm() {
         </div>
         <h2 style={{ fontSize: '20px', fontWeight: '800', color: '#111827', margin: '0 0 8px', textAlign: 'center' }}>Access Denied</h2>
         <p style={{ fontSize: '14px', color: '#6B7280', textAlign: 'center', margin: '0 0 28px', lineHeight: '1.6' }}>
-          You are signed in as an <strong>{role.toUpperCase()}</strong>.<br />
+          You are signed in as an <strong>{(role ?? '').toUpperCase()}</strong>.<br />
           Only <strong>Teacher</strong> and <strong>Metro Officer</strong> roles can submit records.
         </p>
         <div style={{ display: 'flex', gap: '12px' }}>
@@ -506,6 +505,19 @@ export default function TeacherForm() {
               
               {isEducationOffice && (
                 <>
+                  {/* Read-only Education Office display field */}
+                  <div style={{ marginBottom: '16px' }}>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Category
+                    </label>
+                    <div style={{
+                      width: '100%', padding: '12px 14px', borderRadius: '10px', border: '1.5px solid #002147',
+                      backgroundColor: '#F0F4F8', fontSize: '14px', color: '#002147', fontWeight: '600',
+                      boxSizing: 'border-box',
+                    }}>
+                      Education Office
+                    </div>
+                  </div>
                   <InputField label="Teacher Name" value={form.teacherName} onChange={set('teacherName')} placeholder="Enter full name" />
                   {errors.teacherName && <p style={{ color: '#CE1126', fontSize: '12px', margin: '-12px 0 12px' }}>{errors.teacherName}</p>}
                 </>
