@@ -12,7 +12,10 @@
   "dependencies": {
     "@types/papaparse": "^5.5.2",
     "browser-image-compression": "^2.0.2",
+    "file-saver": "^2.0.5",
     "firebase": "^12.14.0",
+    "jspdf": "^4.2.1",
+    "jszip": "^3.10.1",
     "lucide-react": "^1.17.0",
     "papaparse": "^5.5.3",
     "react": "^19.2.6",
@@ -21,6 +24,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/file-saver": "^2.0.7",
     "@types/node": "^24.12.3",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

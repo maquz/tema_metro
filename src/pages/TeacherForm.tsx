@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { CheckCircle, ChevronDown, User, FileText, Upload, Send, X, LogOut, ShieldAlert } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
+import jsPDF from 'jspdf';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
@@ -273,10 +274,11 @@ export default function TeacherForm() {
         return str.trim().replace(/[^a-zA-Z0-9-]/g, '_').replace(/_+/g, '_');
       };
 
-      const uploadPromises = flatFiles.map(async ({ file, documentType }) => {
+      const uploadPromises = flatFiles.map(async ({ file, documentType }, index) => {
         let fileToUpload = file;
+        let ext = file.name.split('.').pop()?.toLowerCase() || 'pdf';
 
-        // Compress if it's an image
+        // Compress if it's an image and convert to PDF
         if (file.type.startsWith('image/')) {
           const options = {
             maxSizeMB: 0.5, // 500KB max
@@ -284,18 +286,50 @@ export default function TeacherForm() {
             useWebWorker: true,
           };
           try {
-            fileToUpload = await imageCompression(file, options);
+            const compressedFile = await imageCompression(file, options);
+            
+            // Convert image to PDF
+            const pdf = new jsPDF();
+            const base64Data = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(compressedFile);
+            });
+            
+            const img = new Image();
+            img.src = base64Data;
+            await new Promise((resolve) => { img.onload = resolve; });
+            
+            const imgWidth = img.width;
+            const imgHeight = img.height;
+            const a4Width = 595.28;
+            const a4Height = 841.89;
+            
+            const widthRatio = a4Width / imgWidth;
+            const heightRatio = a4Height / imgHeight;
+            const ratio = Math.min(widthRatio, heightRatio);
+            
+            const finalWidth = imgWidth * ratio;
+            const finalHeight = imgHeight * ratio;
+            const x = (a4Width - finalWidth) / 2;
+            const y = (a4Height - finalHeight) / 2;
+            
+            pdf.addImage(base64Data, compressedFile.type === 'image/png' ? 'PNG' : 'JPEG', x, y, finalWidth, finalHeight);
+            
+            const pdfBlob = pdf.output('blob');
+            fileToUpload = new File([pdfBlob], file.name.replace(/\.[^/.]+$/, "") + ".pdf", { type: 'application/pdf' });
+            ext = 'pdf';
           } catch (error) {
-            console.error('Compression error:', error);
-            // Fallback to original file if compression fails
+            console.error('Compression or PDF conversion error:', error);
+            // Fallback to original file if compression/conversion fails
           }
         }
 
-        // Rename logic: Name_of_Teacher_Document_Name.extension
-        const ext = fileToUpload.name.split('.').pop() || 'jpg';
+        // Rename logic: 01_Teacher Name.pdf
+        const paddedIndex = String(index + 1).padStart(2, '0');
         const sanitizedTeacher = sanitizeForFilename(form.teacherName);
-        const sanitizedDoc = sanitizeForFilename(documentType);
-        const newFilename = `${sanitizedTeacher}_${sanitizedDoc}.${ext}`;
+        const newFilename = `${paddedIndex}_${sanitizedTeacher}.${ext}`;
         const renamedFile = new File([fileToUpload], newFilename, { type: fileToUpload.type });
 
         const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;

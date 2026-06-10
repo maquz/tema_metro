@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import Papa from 'papaparse';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 import Footer from '../components/Footer';
 import { 
   LogOut, Users, FileText, Activity, Search, Download, 
-  ChevronRight, ExternalLink, BarChart3, TrendingUp, GraduationCap, Building2, ShieldCheck
+  ChevronRight, ExternalLink, BarChart3, TrendingUp, GraduationCap, Building2, ShieldCheck,
+  Pencil, Trash2, FolderDown
 } from 'lucide-react';
 
 const CIRCUITS = [
@@ -40,6 +43,18 @@ export default function AdminDashboard() {
 
   // Selected submission modal
   const [selectedSub, setSelectedSub] = useState<any | null>(null);
+
+  // Edit modal state
+  const [editSub, setEditSub] = useState<any | null>(null);
+  const [editForm, setEditForm] = useState<any>({});
+  const [editSaving, setEditSaving] = useState(false);
+
+  // Delete confirmation state
+  const [deleteSub, setDeleteSub] = useState<any | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // Download state
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   // Real-time Firestore Listeners
   useEffect(() => {
@@ -157,6 +172,77 @@ export default function AdminDashboard() {
       console.error('Error updating role:', err);
       alert('Failed to update role. Please try again.');
     }
+  };
+
+  const handleOpenEdit = (sub: any) => {
+    setEditSub(sub);
+    setEditForm({
+      teacherName: sub.teacherName || '',
+      category: sub.category || 'School',
+      circuit: sub.circuit || '',
+      school: sub.school || '',
+      subject: sub.subject || '',
+      sex: sub.sex || '',
+    });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editSub) return;
+    setEditSaving(true);
+    try {
+      const subRef = doc(db, 'submissions', editSub.id);
+      await updateDoc(subRef, editForm);
+      setEditSub(null);
+    } catch (err) {
+      console.error('Error updating submission:', err);
+      alert('Failed to save changes. Please try again.');
+    }
+    setEditSaving(false);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteSub) return;
+    setDeleting(true);
+    try {
+      await deleteDoc(doc(db, 'submissions', deleteSub.id));
+      setDeleteSub(null);
+    } catch (err) {
+      console.error('Error deleting submission:', err);
+      alert('Failed to delete record. Please try again.');
+    }
+    setDeleting(false);
+  };
+
+  const handleDownloadAll = async (sub: any) => {
+    if (!sub.documents || sub.documents.length === 0) {
+      alert('No documents available to download.');
+      return;
+    }
+    setDownloadingId(sub.id);
+    try {
+      const zip = new JSZip();
+      const teacherFolder = zip.folder(sub.teacherName || 'Teacher');
+      await Promise.all(
+        sub.documents.map(async (docItem: any, idx: number) => {
+          try {
+            const response = await fetch(docItem.downloadURL);
+            if (!response.ok) throw new Error(`Failed to fetch ${docItem.fileName}`);
+            const blob = await response.blob();
+            const paddedIndex = String(idx + 1).padStart(2, '0');
+            const fileName = `${paddedIndex}_${sub.teacherName || 'file'}.pdf`;
+            teacherFolder?.file(fileName, blob);
+          } catch (e) {
+            console.error('Error fetching document:', e);
+          }
+        })
+      );
+      const content = await zip.generateAsync({ type: 'blob' });
+      saveAs(content, `${sub.teacherName || 'Teacher'}_Documents.zip`);
+    } catch (err) {
+      console.error('Download error:', err);
+      alert('Failed to create ZIP file. Please try again.');
+    }
+    setDownloadingId(null);
   };
 
   // Metrics calculations
@@ -356,7 +442,7 @@ export default function AdminDashboard() {
                         <th style={{ padding: '16px 24px', color: '#4B5563', fontWeight: '600' }}>Subject</th>
                         <th style={{ padding: '16px 24px', color: '#4B5563', fontWeight: '600' }}>Submitted At</th>
                         <th style={{ padding: '16px 24px', color: '#4B5563', fontWeight: '600' }}>Docs Count</th>
-                        <th style={{ padding: '16px 24px', color: '#4B5563', fontWeight: '600', textAlign: 'center' }}>Action</th>
+                        <th style={{ padding: '16px 24px', color: '#4B5563', fontWeight: '600', textAlign: 'center', minWidth: '220px' }}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -388,15 +474,40 @@ export default function AdminDashboard() {
                               {sub.documents?.length || 0} / {DOCUMENTS.length}
                             </span>
                           </td>
-                          <td style={{ padding: '16px 24px', textAlign: 'center' }}>
-                            <button
-                              onClick={() => setSelectedSub(sub)}
-                              style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', border: 'none', backgroundColor: '#002147', color: '#FFF', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', transition: 'background-color 0.2s' }}
-                              onMouseOver={e => e.currentTarget.style.backgroundColor = '#001530'}
-                              onMouseOut={e => e.currentTarget.style.backgroundColor = '#002147'}
-                            >
-                              View Docs <ChevronRight size={12} />
-                            </button>
+                          <td style={{ padding: '12px 24px', textAlign: 'center' }}>
+                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                              <button
+                                onClick={() => setSelectedSub(sub)}
+                                title="View Documents"
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', border: 'none', backgroundColor: '#002147', color: '#FFF', padding: '6px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', transition: 'background-color 0.2s' }}
+                                onMouseOver={e => e.currentTarget.style.backgroundColor = '#001530'}
+                                onMouseOut={e => e.currentTarget.style.backgroundColor = '#002147'}
+                              >
+                                <ChevronRight size={12} /> View
+                              </button>
+                              <button
+                                onClick={() => handleDownloadAll(sub)}
+                                title="Download all documents as ZIP"
+                                disabled={downloadingId === sub.id}
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', border: 'none', backgroundColor: '#0369A1', color: '#FFF', padding: '6px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: downloadingId === sub.id ? 'not-allowed' : 'pointer', opacity: downloadingId === sub.id ? 0.7 : 1 }}
+                              >
+                                <FolderDown size={12} /> {downloadingId === sub.id ? '...' : 'ZIP'}
+                              </button>
+                              <button
+                                onClick={() => handleOpenEdit(sub)}
+                                title="Edit record"
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', border: 'none', backgroundColor: '#D97706', color: '#FFF', padding: '6px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                              >
+                                <Pencil size={12} /> Edit
+                              </button>
+                              <button
+                                onClick={() => setDeleteSub(sub)}
+                                title="Delete record"
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', border: 'none', backgroundColor: '#CE1126', color: '#FFF', padding: '6px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                              >
+                                <Trash2 size={12} /> Del
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -727,7 +838,14 @@ export default function AdminDashboard() {
             </div>
 
             {/* Modal Footer */}
-            <div style={{ padding: '16px 24px', borderTop: '1px solid #E5E7EB', display: 'flex', justifyContent: 'flex-end', backgroundColor: '#F9FAFB', borderBottomLeftRadius: '16px', borderBottomRightRadius: '16px' }}>
+            <div style={{ padding: '16px 24px', borderTop: '1px solid #E5E7EB', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#F9FAFB', borderBottomLeftRadius: '16px', borderBottomRightRadius: '16px' }}>
+              <button
+                onClick={() => { setSelectedSub(null); handleDownloadAll(selectedSub); }}
+                disabled={downloadingId === selectedSub?.id}
+                style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '8px', border: 'none', backgroundColor: '#0369A1', color: '#FFFFFF', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
+              >
+                <Download size={14} /> {downloadingId === selectedSub?.id ? 'Downloading...' : 'Download All as ZIP'}
+              </button>
               <button 
                 onClick={() => setSelectedSub(null)}
                 style={{ padding: '10px 20px', borderRadius: '8px', border: '1.5px solid #D1D5DB', backgroundColor: '#FFFFFF', color: '#374151', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
@@ -739,6 +857,105 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+
+      {/* EDIT SUBMISSION MODAL */}
+      {editSub && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001, padding: '20px' }}>
+          <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', maxWidth: '560px', width: '100%', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
+            <div style={{ padding: '24px', borderBottom: '1px solid #E5E7EB', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#002147', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Pencil size={18} /> Edit Record
+              </h3>
+              <button onClick={() => setEditSub(null)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#9CA3AF' }}>&times;</button>
+            </div>
+            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {([
+                { label: 'Teacher Name', key: 'teacherName', type: 'text' },
+              ]).map(({ label, key, type }) => (
+                <div key={key}>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#4B5563', textTransform: 'uppercase', marginBottom: '6px' }}>{label}</label>
+                  <input
+                    type={type}
+                    value={editForm[key] || ''}
+                    onChange={e => setEditForm((f: any) => ({ ...f, [key]: e.target.value }))}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
+                  />
+                </div>
+              ))}
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#4B5563', textTransform: 'uppercase', marginBottom: '6px' }}>Category</label>
+                <select value={editForm.category || ''} onChange={e => setEditForm((f: any) => ({ ...f, category: e.target.value }))} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '14px', backgroundColor: '#FFF' }}>
+                  <option value="School">School</option>
+                  <option value="Education Office">Education Office</option>
+                </select>
+              </div>
+              {editForm.category === 'School' && (
+                <>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#4B5563', textTransform: 'uppercase', marginBottom: '6px' }}>Circuit</label>
+                    <select value={editForm.circuit || ''} onChange={e => setEditForm((f: any) => ({ ...f, circuit: e.target.value }))} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '14px', backgroundColor: '#FFF' }}>
+                      <option value="">Select Circuit</option>
+                      {CIRCUITS.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#4B5563', textTransform: 'uppercase', marginBottom: '6px' }}>School</label>
+                    <input type="text" value={editForm.school || ''} onChange={e => setEditForm((f: any) => ({ ...f, school: e.target.value }))} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#4B5563', textTransform: 'uppercase', marginBottom: '6px' }}>Subject</label>
+                    <input type="text" value={editForm.subject || ''} onChange={e => setEditForm((f: any) => ({ ...f, subject: e.target.value }))} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#4B5563', textTransform: 'uppercase', marginBottom: '6px' }}>Sex</label>
+                    <select value={editForm.sex || ''} onChange={e => setEditForm((f: any) => ({ ...f, sex: e.target.value }))} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '14px', backgroundColor: '#FFF' }}>
+                      <option value="">Select</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                    </select>
+                  </div>
+                </>
+              )}
+            </div>
+            <div style={{ padding: '16px 24px', borderTop: '1px solid #E5E7EB', display: 'flex', justifyContent: 'flex-end', gap: '12px', backgroundColor: '#F9FAFB', borderBottomLeftRadius: '16px', borderBottomRightRadius: '16px' }}>
+              <button onClick={() => setEditSub(null)} style={{ padding: '10px 20px', borderRadius: '8px', border: '1.5px solid #D1D5DB', backgroundColor: '#FFF', color: '#374151', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>Cancel</button>
+              <button
+                onClick={handleSaveEdit}
+                disabled={editSaving}
+                style={{ padding: '10px 24px', borderRadius: '8px', border: 'none', backgroundColor: '#002147', color: '#FFF', fontSize: '13px', fontWeight: '700', cursor: editSaving ? 'not-allowed' : 'pointer', opacity: editSaving ? 0.7 : 1 }}
+              >
+                {editSaving ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE CONFIRMATION MODAL */}
+      {deleteSub && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001, padding: '20px' }}>
+          <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', maxWidth: '440px', width: '100%', padding: '32px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', textAlign: 'center' }}>
+            <div style={{ width: '56px', height: '56px', borderRadius: '50%', backgroundColor: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+              <Trash2 size={24} color="#CE1126" />
+            </div>
+            <h3 style={{ fontSize: '18px', fontWeight: '800', color: '#111827', margin: '0 0 8px' }}>Delete Record?</h3>
+            <p style={{ fontSize: '14px', color: '#6B7280', margin: '0 0 24px', lineHeight: '1.5' }}>
+              Are you sure you want to permanently delete the record for <strong style={{ color: '#111827' }}>{deleteSub.teacherName}</strong>? This action cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button onClick={() => setDeleteSub(null)} style={{ padding: '10px 24px', borderRadius: '8px', border: '1.5px solid #D1D5DB', backgroundColor: '#FFF', color: '#374151', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>Cancel</button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                style={{ padding: '10px 24px', borderRadius: '8px', border: 'none', backgroundColor: '#CE1126', color: '#FFF', fontSize: '13px', fontWeight: '700', cursor: deleting ? 'not-allowed' : 'pointer', opacity: deleting ? 0.7 : 1 }}
+              >
+                {deleting ? 'Deleting...' : 'Yes, Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <Footer theme="light" />
     </div>
   );
