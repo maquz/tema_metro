@@ -22,7 +22,7 @@ export default function Signup() {
     // Determine role
     let role = 'teacher';
     if (secretCode) {
-      if (secretCode === 'TEMA_ADMIN_2026') {
+      if (secretCode === '436') {
         role = 'admin';
       } else if (secretCode === 'TEMA_EDITOR_2026') {
         role = 'editor';

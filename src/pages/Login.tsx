@@ -3,7 +3,7 @@ import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Lock, Mail, GraduationCap, Building2, ShieldCheck } from 'lucide-react';
+import { Lock, Mail, GraduationCap, Building2, ShieldCheck, ShieldAlert } from 'lucide-react';
 import Footer from '../components/Footer';
 
 type RoleOption = 'teacher' | 'metro_officer' | 'admin';
@@ -59,6 +59,7 @@ export default function Login() {
   );
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [secretCode, setSecretCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -69,6 +70,12 @@ export default function Login() {
     setLoading(true);
 
     try {
+      if (selectedRole === 'admin' && secretCode !== '436') {
+        setError('Invalid secret code for Admin login.');
+        setLoading(false);
+        return;
+      }
+
       // Step 1: Sign in with Firebase Auth
       const credential = await signInWithEmailAndPassword(auth, email, password);
       const uid = credential.user.uid;
@@ -360,7 +367,55 @@ export default function Login() {
               </div>
             </div>
 
+            {selectedRole === 'admin' && (
+              <div style={{ marginBottom: '24px' }}>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '11px',
+                    fontWeight: '700',
+                    color: 'rgba(255,255,255,0.5)',
+                    marginBottom: '6px',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                  }}
+                >
+                  Admin Secret Code
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <ShieldAlert size={16} color="rgba(255,255,255,0.3)" style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
+                  <input
+                    type="password"
+                    value={secretCode}
+                    onChange={e => setSecretCode(e.target.value)}
+                    placeholder="Enter Admin code"
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '12px 14px 12px 40px',
+                      borderRadius: '10px',
+                      border: '1.5px solid rgba(255,255,255,0.1)',
+                      backgroundColor: 'rgba(0,0,0,0.2)',
+                      color: '#FFF',
+                      fontSize: '14px',
+                      outline: 'none',
+                      transition: 'border-color 0.15s, box-shadow 0.15s',
+                    }}
+                    onFocus={e => {
+                      e.target.style.borderColor = cfg.border;
+                      e.target.style.boxShadow = `0 0 0 3px ${cfg.border}40`;
+                    }}
+                    onBlur={e => {
+                      e.target.style.borderColor = 'rgba(255,255,255,0.1)';
+                      e.target.style.boxShadow = 'none';
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
             <button
+              type="submit"
               disabled={loading}
               style={{
                 width: '100%',
