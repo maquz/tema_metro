@@ -281,48 +281,62 @@ export default function TeacherForm() {
         // Compress if it's an image and convert to PDF
         if (file.type.startsWith('image/')) {
           const options = {
-            maxSizeMB: 0.5, // 500KB max
-            maxWidthOrHeight: 1920,
+            maxSizeMB: 1,
+            maxWidthOrHeight: 2048,
             useWebWorker: true,
           };
           try {
             const compressedFile = await imageCompression(file, options);
-            
-            // Convert image to PDF
-            const pdf = new jsPDF();
+
+            // Read compressed image as base64
             const base64Data = await new Promise<string>((resolve, reject) => {
               const reader = new FileReader();
               reader.onload = () => resolve(reader.result as string);
               reader.onerror = reject;
               reader.readAsDataURL(compressedFile);
             });
-            
-            const img = new Image();
-            img.src = base64Data;
-            await new Promise((resolve) => { img.onload = resolve; });
-            
-            const imgWidth = img.width;
-            const imgHeight = img.height;
-            const a4Width = 595.28;
-            const a4Height = 841.89;
-            
-            const widthRatio = a4Width / imgWidth;
-            const heightRatio = a4Height / imgHeight;
-            const ratio = Math.min(widthRatio, heightRatio);
-            
-            const finalWidth = imgWidth * ratio;
-            const finalHeight = imgHeight * ratio;
-            const x = (a4Width - finalWidth) / 2;
-            const y = (a4Height - finalHeight) / 2;
-            
-            pdf.addImage(base64Data, compressedFile.type === 'image/png' ? 'PNG' : 'JPEG', x, y, finalWidth, finalHeight);
-            
+
+            // Get natural image dimensions via HTMLImageElement
+            const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+              const image = new Image();
+              image.onload = () => resolve(image);
+              image.onerror = reject;
+              image.src = base64Data;
+            });
+
+            // A4 page in mm with 10mm margins
+            const pageW = 210;
+            const pageH = 297;
+            const margin = 10;
+            const maxW = pageW - margin * 2;
+            const maxH = pageH - margin * 2;
+
+            // Scale image to fit inside the margin box
+            const imgAspect = img.naturalWidth / img.naturalHeight;
+            let drawW = maxW;
+            let drawH = drawW / imgAspect;
+            if (drawH > maxH) {
+              drawH = maxH;
+              drawW = drawH * imgAspect;
+            }
+
+            // Centre on the page
+            const offsetX = (pageW - drawW) / 2;
+            const offsetY = (pageH - drawH) / 2;
+
+            // Determine image format for jsPDF
+            const imgFormat = compressedFile.type === 'image/png' ? 'PNG' : 'JPEG';
+
+            // Create PDF (units = mm, format = A4)
+            const pdf = new jsPDF({ orientation: drawW > drawH ? 'landscape' : 'portrait', unit: 'mm', format: 'a4' });
+            pdf.addImage(base64Data, imgFormat, offsetX, offsetY, drawW, drawH);
+
             const pdfBlob = pdf.output('blob');
-            fileToUpload = new File([pdfBlob], file.name.replace(/\.[^/.]+$/, "") + ".pdf", { type: 'application/pdf' });
+            fileToUpload = new File([pdfBlob], file.name.replace(/\.[^/.]+$/, '') + '.pdf', { type: 'application/pdf' });
             ext = 'pdf';
           } catch (error) {
-            console.error('Compression or PDF conversion error:', error);
-            // Fallback to original file if compression/conversion fails
+            console.error('PDF conversion error:', error);
+            // Fallback: upload original image if conversion fails
           }
         }
 
