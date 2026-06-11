@@ -9,7 +9,10 @@ import AdminDashboard from './pages/AdminDashboard';
 
 // Route protection for authenticated users
 function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode; allowedRoles?: string[] }) {
-  const { user, role } = useAuth();
+  const { user, role, loading } = useAuth();
+
+  // Still resolving auth + role from Firestore — show nothing
+  if (loading || (user && role === null)) return null;
 
   if (!user) {
     return <Navigate to="/login" replace />;
@@ -31,9 +34,13 @@ function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode;
 
 // Redirect already logged-in users away from auth pages
 function PublicRoute({ children }: { children: React.ReactNode }) {
-  const { user, role } = useAuth();
+  const { user, role, loading } = useAuth();
 
-  if (user) {
+  // Wait until auth AND role are fully resolved before redirecting
+  // This prevents the race condition where user is set but role is still null
+  if (loading || (user && role === null)) return null;
+
+  if (user && role) {
     if (role === 'admin' || role === 'editor') {
       return <Navigate to="/admin" replace />;
     }
