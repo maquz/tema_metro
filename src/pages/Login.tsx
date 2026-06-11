@@ -107,10 +107,15 @@ export default function Login() {
       }
 
       // Step 4: Sign-in is valid.
-      // Do NOT call navigate() here. onAuthStateChanged in AuthContext will fire,
-      // update the role in context, and PublicRoute will automatically redirect the
-      // user to the correct page (/teacher, /metro, or /admin).
-      // Calling navigate() here causes a race condition before AuthContext has the role.
+      // Perform a hard redirect using window.location.href as a secondary fail-safe.
+      // This resets state, bypasses routing race conditions, and guarantees clean dashboard mounting.
+      if (firestoreRole === 'admin' || firestoreRole === 'editor') {
+        window.location.href = '/admin';
+      } else if (firestoreRole === 'metro_officer') {
+        window.location.href = '/metro';
+      } else {
+        window.location.href = '/teacher';
+      }
 
     } catch (err: any) {
       console.error(err);

@@ -11,18 +11,20 @@ import AdminDashboard from './pages/AdminDashboard';
 function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode; allowedRoles?: string[] }) {
   const { user, role, loading } = useAuth();
 
-  // Still resolving auth + role from Firestore — show nothing
-  if (loading || (user && role === null)) return null;
+  if (loading) return null;
 
   if (!user) {
     return <Navigate to="/login" replace />;
   }
 
-  // If the route has restricted roles and the user's role is loaded but not permitted, redirect
-  if (allowedRoles && role && !allowedRoles.includes(role)) {
-    if (role === 'teacher') {
+  // Fallback to 'teacher' for legacy users who might have no role field in Firestore
+  const finalRole = role || 'teacher';
+
+  // If the route has restricted roles and the user's role is not permitted, redirect
+  if (allowedRoles && !allowedRoles.includes(finalRole)) {
+    if (finalRole === 'teacher') {
       return <Navigate to="/teacher" replace />;
-    } else if (role === 'metro_officer') {
+    } else if (finalRole === 'metro_officer') {
       return <Navigate to="/metro" replace />;
     } else {
       return <Navigate to="/admin" replace />;
@@ -36,15 +38,15 @@ function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode;
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const { user, role, loading } = useAuth();
 
-  // Wait until auth AND role are fully resolved before redirecting
-  // This prevents the race condition where user is set but role is still null
-  if (loading || (user && role === null)) return null;
+  if (loading) return null;
 
-  if (user && role) {
-    if (role === 'admin' || role === 'editor') {
+  if (user) {
+    // Fallback to 'teacher' for legacy users who might have no role field in Firestore
+    const finalRole = role || 'teacher';
+    if (finalRole === 'admin' || finalRole === 'editor') {
       return <Navigate to="/admin" replace />;
     }
-    if (role === 'metro_officer') {
+    if (finalRole === 'metro_officer') {
       return <Navigate to="/metro" replace />;
     }
     return <Navigate to="/teacher" replace />;

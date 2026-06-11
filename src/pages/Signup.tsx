@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Lock, Mail, Key } from 'lucide-react';
 import Footer from '../components/Footer';
 
@@ -12,7 +12,7 @@ export default function Signup() {
   const [secretCode, setSecretCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
+
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,7 +43,14 @@ export default function Signup() {
         role,
         createdAt: new Date().toISOString()
       });
-      navigate('/');
+      // Perform a hard redirect to the correct dashboard to guarantee clean load and bypass race conditions.
+      if (role === 'admin' || role === 'editor') {
+        window.location.href = '/admin';
+      } else if (role === 'metro_officer') {
+        window.location.href = '/metro';
+      } else {
+        window.location.href = '/teacher';
+      }
     } catch (err: any) {
       console.error(err);
       setError('Failed to sign up. Check if the email is valid and password is > 6 chars.');

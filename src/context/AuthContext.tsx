@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 
 interface AuthContextType {
@@ -20,34 +20,63 @@ const AuthContext = createContext<AuthContextType>({
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [role, setRole] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [authState, setAuthState] = useState<{
+    user: User | null;
+    role: string | null;
+    loading: boolean;
+  }>({
+    user: null,
+    role: null,
+    loading: true,
+  });
+
+  const { user, role, loading } = authState;
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser);
-      if (firebaseUser) {
-        // Fetch role
-        try {
-          const docRef = doc(db, 'users', firebaseUser.uid);
-          const docSnap = await getDoc(docRef);
-          if (docSnap.exists()) {
-            setRole(docSnap.data().role);
-          } else {
-            setRole(null);
-          }
-        } catch (error) {
-          console.error('Error fetching user role:', error);
-          setRole(null);
-        }
-      } else {
-        setRole(null);
+    let unsubscribeDoc: (() => void) | null = null;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+      // Clean up previous document listener if any
+      if (unsubscribeDoc) {
+        unsubscribeDoc();
+        unsubscribeDoc = null;
       }
-      setLoading(false);
+
+      if (firebaseUser) {
+        // Set loading back to true while fetching the new user's document/role
+        setAuthState(prev => ({ ...prev, loading: true }));
+
+        const docRef = doc(db, 'users', firebaseUser.uid);
+        unsubscribeDoc = onSnapshot(docRef, (docSnap) => {
+          const fetchedRole = docSnap.exists() ? (docSnap.data().role || null) : null;
+          setAuthState({
+            user: firebaseUser,
+            role: fetchedRole,
+            loading: false,
+          });
+        }, (error) => {
+          console.error('Error fetching user document:', error);
+          setAuthState({
+            user: firebaseUser,
+            role: null,
+            loading: false,
+          });
+        });
+      } else {
+        setAuthState({
+          user: null,
+          role: null,
+          loading: false,
+        });
+      }
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeDoc) {
+        unsubscribeDoc();
+      }
+    };
   }, []);
 
   // Presence logic
