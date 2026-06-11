@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Lock, Mail, GraduationCap, Building2, ShieldCheck, ShieldAlert } from 'lucide-react';
 import Footer from '../components/Footer';
 
@@ -62,7 +62,6 @@ export default function Login() {
   const [secretCode, setSecretCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,7 +85,6 @@ export default function Login() {
       const firestoreRole: string = userDocSnap.exists() ? (userDocSnap.data().role ?? 'teacher') : 'teacher';
 
       // Step 3: Validate role vs selected portal
-      // Admin and editor both use the Admin portal
       const isAdminPortal = selectedRole === 'admin';
       const roleMatchesPortal =
         (selectedRole === 'teacher' && firestoreRole === 'teacher') ||
@@ -108,20 +106,17 @@ export default function Login() {
         return;
       }
 
-      // Step 4: Navigate based on verified role
-      if (firestoreRole === 'admin' || firestoreRole === 'editor') {
-        navigate('/admin');
-      } else if (firestoreRole === 'metro_officer') {
-        navigate('/metro');
-      } else {
-        navigate('/teacher');
-      }
+      // Step 4: Sign-in is valid.
+      // Do NOT call navigate() here. onAuthStateChanged in AuthContext will fire,
+      // update the role in context, and PublicRoute will automatically redirect the
+      // user to the correct page (/teacher, /metro, or /admin).
+      // Calling navigate() here causes a race condition before AuthContext has the role.
+
     } catch (err: any) {
       console.error(err);
       setError('Failed to log in. Please check your email and password.');
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   const cfg = ROLE_CONFIG[selectedRole];
