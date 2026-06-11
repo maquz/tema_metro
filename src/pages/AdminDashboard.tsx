@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, onSnapshot, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc, deleteDoc, addDoc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import Papa from 'papaparse';
 import JSZip from 'jszip';
@@ -9,13 +9,23 @@ import Footer from '../components/Footer';
 import { 
   LogOut, Users, FileText, Activity, Search, Download, 
   ChevronRight, ExternalLink, BarChart3, TrendingUp, GraduationCap, Building2, ShieldCheck,
-  Pencil, Trash2, FolderDown
+  Pencil, Trash2, FolderDown, Plus
 } from 'lucide-react';
 
 const CIRCUITS = [
   'ASHAMANG', 'AWUDUM', 'COMMUNITY 11/REDEMPTION VALLEY', 'COMMUNITY 7/REPUBLIC ROAD',
   'COMMUNITY 8', 'ONINKU/MANTE-DIN', 'TWEDAASE',
 ];
+
+const DEFAULT_SCHOOLS: Record<string, string[]> = {
+  'ASHAMANG': ['MANHEAN METHODIST BASIC SCHOOL', 'MANHEAN S.D.A BASIC SCHOOL', 'MANHEAN TMA PRIMARY \'A\'', 'MANHEAN TMA PRIMARY \'B\'', 'NAVAL BASE JHS', 'NAVAL BASE PRE-SCHOOL', 'NAVAL BASE PRIMARY', 'NII ADJETEY ANSAH MEMORIAL J.H.S', 'ST. PETERS CATHOLIC BASIC SCHOOL'],
+  'AWUDUM': ['MANHEAN ANGLICAN \'A\' & \'B\' PRIMARY', 'MANHEAN ANGLICAN D PRIMARY SCHOOL', 'MANHEAN ANGLICAN JHS', 'MANHEAN ANGLICAN PRIMARY \'C\'', 'MANHEAN COMMUNITY PRIMARY', 'MANHEAN PRESBY PRIMARY \'A\' SCHOOL', 'MANHEAN PRESBY PRIMARY \'B\' SCHOOL', 'MANHEAN TMA 1 JHS', 'MANHEAN TMA 2 JHS'],
+  'COMMUNITY 11/REDEMPTION VALLEY': ['COMMUNITY 11 COMPLEX J.H.S.', 'COMMUNITY 11 COMPLEX PRIMARY \'B\' & KG', 'RAHMANIYYA ISLAMIC BASIC SCHOOL', 'REDEMPTION VALLEY PRIMARY AND K.G', 'COMMUNITY 11 COMPLEX PRIMARY \'A\' & KG', 'REDEMPTION VALLEY BASIC SCHOOL'],
+  'COMMUNITY 7/REPUBLIC ROAD': ['COMMUNITY 4NO2 PRIMARY SCHOOL', 'COMMUNITY 7 NO.1 BASIC SCHOOL', 'COMMUNITY 7 NO.2 J.H.S', 'COMMUNITY 7 NO.2 PRIMARY SCHOOL', 'NAYLOR SDA SCHOOL', 'REPUBLIC ROAD J.H.S', 'COMMUNITY 8 NO 1 PRIMARY SCHOOL'],
+  'COMMUNITY 8': ['COMMUNITY 8 NO.1 JHS', 'COMMUNITY 8 NO.2 J.H.S', 'COMMUNITY 8 NO.3 J.H.S', 'COMMUNITY 8 NO.3 PRIMARY', 'COMMUNITY 8 NO.4 J.H.S', 'COMMUNITY 8 NO.4 PRIMARY SCHOOL'],
+  'ONINKU/MANTE-DIN': ['COMMUNITY 1 PRESBY PRIMARY SCHOOL', 'MANTE-DIN DRIVE BASIC', 'ONINKU DRIVE 1 J.H.S', 'ONINKU DRIVE 2 JUNIOR HIGH SCHOOL', 'ONINKU DRIVE PRIMARY', 'ST. ALBAN ANGLICAN BASIC SCHOOL'],
+  'TWEDAASE': ['AKODZO J.H.S', 'LORENZE WOLF JHS', 'PADMORE STREET PRIMARY SCHOOL', 'ST. PAUL METHODIST J.H.S.', 'TWEDAASE J.H.S', 'TWEDAASE PRIMARY SCHOOL'],
+};
 
 const DOCUMENTS = [
   'Letter of Appointment',
@@ -27,7 +37,7 @@ const DOCUMENTS = [
 
 export default function AdminDashboard() {
   const { user, role, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState<'submissions' | 'users' | 'analytics'>('submissions');
+  const [activeTab, setActiveTab] = useState<'submissions' | 'users' | 'analytics' | 'schools'>('submissions');
   
   // Data States
   const [submissions, setSubmissions] = useState<any[]>([]);
@@ -57,6 +67,14 @@ export default function AdminDashboard() {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [bulkDownloading, setBulkDownloading] = useState(false);
 
+  // User Management State
+  const [userSearchTerm, setUserSearchTerm] = useState('');
+
+  // Schools Management State
+  const [schoolsData, setSchoolsData] = useState<any[]>([]);
+  const [seeding, setSeeding] = useState(false);
+  const [newSchool, setNewSchool] = useState({ circuit: '', school: '' });
+
   // Real-time Firestore Listeners
   useEffect(() => {
     const unsubSubmissions = onSnapshot(collection(db, 'submissions'), (snapshot) => {
@@ -75,9 +93,15 @@ export default function AdminDashboard() {
       setUsers(data);
     });
 
+    const unsubSchools = onSnapshot(collection(db, 'schools'), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setSchoolsData(data);
+    });
+
     return () => {
       unsubSubmissions();
       unsubUsers();
+      unsubSchools();
     };
   }, []);
 
@@ -295,6 +319,9 @@ export default function AdminDashboard() {
     setBulkDownloading(false);
   };
 
+  const dynamicCircuits = Array.from(new Set(schoolsData.map((s: any) => s.circuit))).sort();
+  const displayCircuits = dynamicCircuits.length > 0 ? dynamicCircuits : CIRCUITS;
+
   // Metrics calculations
   const totalSubmissions = submissions.length;
   
@@ -372,6 +399,12 @@ export default function AdminDashboard() {
             >
               <BarChart3 size={16} /> App Analytics
             </button>
+            <button
+              onClick={() => setActiveTab('schools')}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', border: 'none', backgroundColor: activeTab === 'schools' ? '#002147' : 'transparent', color: activeTab === 'schools' ? '#FFFFFF' : '#4B5563', fontWeight: '600', fontSize: '14px', cursor: 'pointer', transition: 'all 0.2s' }}
+            >
+              <Building2 size={16} /> Schools Management
+            </button>
           </div>
 
           <div style={{ display: 'flex', gap: '16px' }}>
@@ -432,7 +465,7 @@ export default function AdminDashboard() {
                   style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '13px', backgroundColor: '#FFF', outline: 'none' }}
                 >
                   <option value="">All Circuits</option>
-                  {CIRCUITS.map(c => <option key={c} value={c}>{c}</option>)}
+                  {displayCircuits.map((c: any) => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
 
@@ -579,8 +612,18 @@ export default function AdminDashboard() {
         {/* Tab CONTENT 2: USER PRESENCE & ROLES */}
         {activeTab === 'users' && (
           <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)', overflow: 'hidden' }}>
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid #E5E7EB' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #E5E7EB', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#002147', margin: 0 }}>Registered Portal Users</h3>
+              <div style={{ position: 'relative', width: '300px' }}>
+                <Search size={16} color="#9CA3AF" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                <input 
+                  type="text" 
+                  value={userSearchTerm} 
+                  onChange={e => setUserSearchTerm(e.target.value)} 
+                  placeholder="Search by email..." 
+                  style={{ width: '100%', padding: '8px 12px 8px 36px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '13px', outline: 'none' }}
+                />
+              </div>
             </div>
 
             <div style={{ overflowX: 'auto' }}>
@@ -592,11 +635,11 @@ export default function AdminDashboard() {
                     <th style={{ padding: '16px 24px', color: '#4B5563', fontWeight: '600' }}>Online Status</th>
                     <th style={{ padding: '16px 24px', color: '#4B5563', fontWeight: '600' }}>Last Active Time</th>
                     <th style={{ padding: '16px 24px', color: '#4B5563', fontWeight: '600' }}>Registered On</th>
-                    {role === 'admin' && <th style={{ padding: '16px 24px', color: '#4B5563', fontWeight: '600', textAlign: 'center' }}>Change Role</th>}
+                    {role === 'admin' && <th style={{ padding: '16px 24px', color: '#4B5563', fontWeight: '600', textAlign: 'center' }}>Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
-                  {users.map((u: any) => {
+                  {users.filter(u => u.email?.toLowerCase().includes(userSearchTerm.toLowerCase())).map((u: any) => {
                     const online = isUserActive(u);
                     return (
                       <tr key={u.id} style={{ borderBottom: '1px solid #F3F4F6' }}>
@@ -637,17 +680,36 @@ export default function AdminDashboard() {
                         </td>
                         {role === 'admin' && (
                           <td style={{ padding: '16px 24px', textAlign: 'center' }}>
-                            <select
-                              value={u.role || 'teacher'}
-                              disabled={u.id === user?.uid} // prevent self-demotion
-                              onChange={e => handleRoleChange(u.id, e.target.value)}
-                              style={{ padding: '6px 10px', borderRadius: '6px', border: '1.5px solid #D1D5DB', fontSize: '12px', fontWeight: '600', cursor: u.id === user?.uid ? 'not-allowed' : 'pointer', outline: 'none' }}
-                            >
-                              <option value="teacher">Teacher</option>
-                              <option value="metro_officer">Metro Officer</option>
-                              <option value="editor">Editor</option>
-                              <option value="admin">Admin</option>
-                            </select>
+                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', alignItems: 'center' }}>
+                              <select
+                                value={u.role || 'teacher'}
+                                disabled={u.id === user?.uid} // prevent self-demotion
+                                onChange={e => handleRoleChange(u.id, e.target.value)}
+                                style={{ padding: '6px 10px', borderRadius: '6px', border: '1.5px solid #D1D5DB', fontSize: '12px', fontWeight: '600', cursor: u.id === user?.uid ? 'not-allowed' : 'pointer', outline: 'none' }}
+                              >
+                                <option value="teacher">Teacher</option>
+                                <option value="metro_officer">Metro Officer</option>
+                                <option value="editor">Editor</option>
+                                <option value="admin">Admin</option>
+                              </select>
+                              <button
+                                onClick={async () => {
+                                  if (window.confirm(`Are you sure you want to delete profile access for ${u.email}?`)) {
+                                    try {
+                                      await deleteDoc(doc(db, 'users', u.id));
+                                    } catch (err) {
+                                      console.error(err);
+                                      alert('Failed to delete user data.');
+                                    }
+                                  }
+                                }}
+                                disabled={u.id === user?.uid}
+                                title="Delete User Access"
+                                style={{ padding: '6px 10px', borderRadius: '6px', border: 'none', backgroundColor: '#CE1126', color: '#FFF', cursor: u.id === user?.uid ? 'not-allowed' : 'pointer', opacity: u.id === user?.uid ? 0.5 : 1 }}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
                           </td>
                         )}
                       </tr>
@@ -655,6 +717,131 @@ export default function AdminDashboard() {
                   })}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {/* Tab CONTENT: SCHOOLS MANAGEMENT */}
+        {activeTab === 'schools' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            {/* Header and Seed Button */}
+            <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3 style={{ fontSize: '18px', fontWeight: '800', color: '#002147', margin: '0 0 4px' }}>Schools & Circuits Management</h3>
+                <p style={{ fontSize: '13px', color: '#6B7280', margin: 0 }}>Add, edit, or remove circuits and schools. Data is synced in real-time.</p>
+              </div>
+              <button
+                onClick={async () => {
+                  if (!window.confirm('Seed default Tema Metro schools? This will add dozens of records.')) return;
+                  setSeeding(true);
+                  try {
+                    const promises = [];
+                    for (const [circuit, schoolsList] of Object.entries(DEFAULT_SCHOOLS)) {
+                      for (const school of schoolsList) {
+                        promises.push(addDoc(collection(db, 'schools'), { circuit, school }));
+                      }
+                    }
+                    await Promise.all(promises);
+                    alert('Schools seeded successfully!');
+                  } catch (err) {
+                    console.error(err);
+                    alert('Failed to seed schools.');
+                  }
+                  setSeeding(false);
+                }}
+                disabled={seeding}
+                style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#002147', color: '#FFFFFF', fontSize: '13px', fontWeight: '700', cursor: seeding ? 'not-allowed' : 'pointer', transition: 'all 0.2s' }}
+              >
+                {seeding ? 'Seeding...' : 'Seed Default Tema Schools'}
+              </button>
+            </div>
+
+            {/* Add New School Form */}
+            <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
+              <h4 style={{ fontSize: '14px', fontWeight: '700', color: '#111827', margin: '0 0 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Plus size={16} /> Add New School
+              </h4>
+              <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#4B5563', textTransform: 'uppercase', marginBottom: '6px' }}>Circuit Name</label>
+                  <input
+                    type="text"
+                    value={newSchool.circuit}
+                    onChange={e => setNewSchool(prev => ({ ...prev, circuit: e.target.value.toUpperCase() }))}
+                    placeholder="e.g. ASHAMANG"
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
+                  />
+                </div>
+                <div style={{ flex: 2 }}>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#4B5563', textTransform: 'uppercase', marginBottom: '6px' }}>School Name</label>
+                  <input
+                    type="text"
+                    value={newSchool.school}
+                    onChange={e => setNewSchool(prev => ({ ...prev, school: e.target.value.toUpperCase() }))}
+                    placeholder="e.g. MANHEAN METHODIST BASIC SCHOOL"
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
+                  />
+                </div>
+                <button
+                  onClick={async () => {
+                    if (!newSchool.circuit || !newSchool.school) return alert('Both fields are required.');
+                    try {
+                      await addDoc(collection(db, 'schools'), newSchool);
+                      setNewSchool({ circuit: '', school: '' });
+                    } catch (err) {
+                      console.error(err);
+                      alert('Failed to add school.');
+                    }
+                  }}
+                  style={{ padding: '11px 20px', borderRadius: '8px', border: 'none', backgroundColor: '#10B981', color: '#FFF', fontSize: '13px', fontWeight: '700', cursor: 'pointer', height: '42px' }}
+                >
+                  Add School
+                </button>
+              </div>
+            </div>
+
+            {/* Existing Schools List */}
+            <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
+              <h4 style={{ fontSize: '14px', fontWeight: '700', color: '#111827', margin: '0 0 16px' }}>Current Database ({schoolsData.length} records)</h4>
+              <div style={{ overflowX: 'auto', maxHeight: '500px', overflowY: 'auto', border: '1px solid #E5E7EB', borderRadius: '8px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                  <thead style={{ position: 'sticky', top: 0, backgroundColor: '#F9FAFB', zIndex: 1 }}>
+                    <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
+                      <th style={{ padding: '12px 16px', color: '#4B5563', fontWeight: '600' }}>Circuit</th>
+                      <th style={{ padding: '12px 16px', color: '#4B5563', fontWeight: '600' }}>School</th>
+                      <th style={{ padding: '12px 16px', color: '#4B5563', fontWeight: '600', textAlign: 'center', width: '80px' }}>Delete</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {schoolsData.slice().sort((a, b) => a.circuit.localeCompare(b.circuit) || a.school.localeCompare(b.school)).map((s: any) => (
+                      <tr key={s.id} style={{ borderBottom: '1px solid #F3F4F6' }}>
+                        <td style={{ padding: '12px 16px', fontWeight: '600', color: '#374151' }}>{s.circuit}</td>
+                        <td style={{ padding: '12px 16px', color: '#111827' }}>{s.school}</td>
+                        <td style={{ padding: '8px 16px', textAlign: 'center' }}>
+                          <button
+                            onClick={async () => {
+                              if (window.confirm(`Delete ${s.school}?`)) {
+                                await deleteDoc(doc(db, 'schools', s.id));
+                              }
+                            }}
+                            style={{ background: 'none', border: 'none', color: '#CE1126', cursor: 'pointer', padding: '4px' }}
+                            title="Delete School"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {schoolsData.length === 0 && (
+                      <tr>
+                        <td colSpan={3} style={{ padding: '24px', textAlign: 'center', color: '#6B7280' }}>
+                          No schools in database. Use the seed button above or add them manually.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
@@ -952,7 +1139,7 @@ export default function AdminDashboard() {
                     <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#4B5563', textTransform: 'uppercase', marginBottom: '6px' }}>Circuit</label>
                     <select value={editForm.circuit || ''} onChange={e => setEditForm((f: any) => ({ ...f, circuit: e.target.value }))} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '14px', backgroundColor: '#FFF' }}>
                       <option value="">Select Circuit</option>
-                      {CIRCUITS.map(c => <option key={c} value={c}>{c}</option>)}
+                      {displayCircuits.map((c: any) => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </div>
                   <div>

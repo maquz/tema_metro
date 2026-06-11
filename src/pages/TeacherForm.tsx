@@ -2,50 +2,11 @@ import { useState, useRef, useEffect } from 'react';
 import { CheckCircle, ChevronDown, User, FileText, Upload, Send, X, LogOut, ShieldAlert } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 import jsPDF from 'jspdf';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import ImageCropperModal from '../components/ImageCropperModal';
 import Footer from '../components/Footer';
-
-const CIRCUITS = [
-  'ASHAMANG', 'AWUDUM', 'COMMUNITY 11/REDEMPTION VALLEY', 'COMMUNITY 7/REPUBLIC ROAD',
-  'COMMUNITY 8', 'ONINKU/MANTE-DIN', 'TWEDAASE',
-];
-
-const SCHOOLS: Record<string, string[]> = {
-  'ASHAMANG': [
-    'MANHEAN METHODIST BASIC SCHOOL', 'MANHEAN S.D.A BASIC SCHOOL', 'MANHEAN TMA PRIMARY \'A\'',
-    'MANHEAN TMA PRIMARY \'B\'', 'NAVAL BASE JHS', 'NAVAL BASE PRE-SCHOOL',
-    'NAVAL BASE PRIMARY', 'NII ADJETEY ANSAH MEMORIAL J.H.S', 'ST. PETERS CATHOLIC BASIC SCHOOL'
-  ],
-  'AWUDUM': [
-    'MANHEAN ANGLICAN \'A\' & \'B\' PRIMARY', 'MANHEAN ANGLICAN D PRIMARY SCHOOL', 'MANHEAN ANGLICAN JHS',
-    'MANHEAN ANGLICAN PRIMARY \'C\'', 'MANHEAN COMMUNITY PRIMARY', 'MANHEAN PRESBY PRIMARY \'A\' SCHOOL',
-    'MANHEAN PRESBY PRIMARY \'B\' SCHOOL', 'MANHEAN TMA 1 JHS', 'MANHEAN TMA 2 JHS'
-  ],
-  'COMMUNITY 11/REDEMPTION VALLEY': [
-    'COMMUNITY 11 COMPLEX J.H.S.', 'COMMUNITY 11 COMPLEX PRIMARY \'B\' & KG', 'RAHMANIYYA ISLAMIC BASIC SCHOOL',
-    'REDEMPTION VALLEY PRIMARY AND K.G', 'COMMUNITY 11 COMPLEX PRIMARY \'A\' & KG', 'REDEMPTION VALLEY BASIC SCHOOL'
-  ],
-  'COMMUNITY 7/REPUBLIC ROAD': [
-    'COMMUNITY 4NO2 PRIMARY SCHOOL', 'COMMUNITY 7 NO.1 BASIC SCHOOL', 'COMMUNITY 7 NO.2 J.H.S',
-    'COMMUNITY 7 NO.2 PRIMARY SCHOOL', 'NAYLOR SDA SCHOOL', 'REPUBLIC ROAD J.H.S',
-    'COMMUNITY 8 NO 1 PRIMARY SCHOOL'
-  ],
-  'COMMUNITY 8': [
-    'COMMUNITY 8 NO.1 JHS', 'COMMUNITY 8 NO.2 J.H.S', 'COMMUNITY 8 NO.3 J.H.S',
-    'COMMUNITY 8 NO.3 PRIMARY', 'COMMUNITY 8 NO.4 J.H.S', 'COMMUNITY 8 NO.4 PRIMARY SCHOOL'
-  ],
-  'ONINKU/MANTE-DIN': [
-    'COMMUNITY 1 PRESBY PRIMARY SCHOOL', 'MANTE-DIN DRIVE BASIC', 'ONINKU DRIVE 1 J.H.S',
-    'ONINKU DRIVE 2 JUNIOR HIGH SCHOOL', 'ONINKU DRIVE PRIMARY', 'ST. ALBAN ANGLICAN BASIC SCHOOL'
-  ],
-  'TWEDAASE': [
-    'AKODZO J.H.S', 'LORENZE WOLF JHS', 'PADMORE STREET PRIMARY SCHOOL',
-    'ST. PAUL METHODIST J.H.S.', 'TWEDAASE J.H.S', 'TWEDAASE PRIMARY SCHOOL'
-  ],
-};
 
 const SUBJECTS = [
   'English', 'Mathematics', 'Science', 'Social Studies', 'ICT', 'French',
@@ -223,6 +184,18 @@ export default function TeacherForm() {
   const [files, setFiles] = useState<File[][]>(DOCUMENTS.map(() => []));
   const [submitting, setSubmitting] = useState(false);
   const [submittingText, setSubmittingText] = useState('Submitting...');
+  const [schoolsData, setSchoolsData] = useState<any[]>([]);
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'schools'), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setSchoolsData(data);
+    });
+    return () => unsub();
+  }, []);
+
+  const dynamicCircuits = Array.from(new Set(schoolsData.map(s => s.circuit))).sort();
+  const getSchoolsForCircuit = (circuit: string) => schoolsData.filter(s => s.circuit === circuit).map(s => s.school).sort();
 
   const currentRole = role || 'teacher'; // Fallback for old users without roles
 
@@ -591,9 +564,9 @@ export default function TeacherForm() {
 
               {isSchool && (
                 <>
-                  <SelectField label="Circuit Name" value={form.circuit} onChange={set('circuit')} options={CIRCUITS} placeholder="— Select Circuit —" />
+                  <SelectField label="Circuit Name" value={form.circuit} onChange={set('circuit')} options={dynamicCircuits as string[]} placeholder="— Select Circuit —" />
                   {errors.circuit && <p style={{ color: '#CE1126', fontSize: '12px', margin: '-12px 0 12px' }}>{errors.circuit}</p>}
-                  <SelectField label="School Name" value={form.school} onChange={set('school')} options={form.circuit ? SCHOOLS[form.circuit] || [] : []} placeholder={form.circuit ? '— Select School —' : 'Select a circuit first...'} disabled={!form.circuit} />
+                  <SelectField label="School Name" value={form.school} onChange={set('school')} options={form.circuit ? getSchoolsForCircuit(form.circuit) : []} placeholder={form.circuit ? '— Select School —' : 'Select a circuit first...'} disabled={!form.circuit} />
                   {errors.school && <p style={{ color: '#CE1126', fontSize: '12px', margin: '-12px 0 12px' }}>{errors.school}</p>}
                   <InputField label="Teacher Name" value={form.teacherName} onChange={set('teacherName')} placeholder="Enter full name" />
                   {errors.teacherName && <p style={{ color: '#CE1126', fontSize: '12px', margin: '-12px 0 12px' }}>{errors.teacherName}</p>}
