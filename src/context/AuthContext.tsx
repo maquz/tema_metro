@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
-import { doc, setDoc, onSnapshot } from 'firebase/firestore';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 
 interface AuthContextType {
@@ -33,35 +33,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const { user, role, loading } = authState;
 
   useEffect(() => {
-    let unsubscribeDoc: (() => void) | null = null;
-
-    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
-      // Clean up previous document listener if any
-      if (unsubscribeDoc) {
-        unsubscribeDoc();
-        unsubscribeDoc = null;
-      }
-
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         // Set loading back to true while fetching the new user's document/role
         setAuthState(prev => ({ ...prev, loading: true }));
 
-        const docRef = doc(db, 'users', firebaseUser.uid);
-        unsubscribeDoc = onSnapshot(docRef, (docSnap) => {
+        try {
+          const docRef = doc(db, 'users', firebaseUser.uid);
+          const docSnap = await getDoc(docRef);
           const fetchedRole = docSnap.exists() ? (docSnap.data().role || null) : null;
           setAuthState({
             user: firebaseUser,
             role: fetchedRole,
             loading: false,
           });
-        }, (error) => {
+        } catch (error) {
           console.error('Error fetching user document:', error);
           setAuthState({
             user: firebaseUser,
             role: null,
             loading: false,
           });
-        });
+        }
       } else {
         setAuthState({
           user: null,
@@ -71,12 +64,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     });
 
-    return () => {
-      unsubscribeAuth();
-      if (unsubscribeDoc) {
-        unsubscribeDoc();
-      }
-    };
+    return () => unsubscribeAuth();
   }, []);
 
   // Presence logic

@@ -222,6 +222,7 @@ export default function TeacherForm() {
   const [errors, setErrors] = useState<Partial<FormData>>({});
   const [files, setFiles] = useState<File[][]>(DOCUMENTS.map(() => []));
   const [submitting, setSubmitting] = useState(false);
+  const [submittingText, setSubmittingText] = useState('Submitting...');
 
   const currentRole = role || 'teacher'; // Fallback for old users without roles
 
@@ -265,6 +266,7 @@ export default function TeacherForm() {
 
   const handleSubmit = async () => {
     setSubmitting(true);
+    setSubmittingText('Preparing files...');
     try {
       const flatFiles = files.flatMap((group, index) => 
         group.map(file => ({ file, documentType: DOCUMENTS[index] }))
@@ -274,7 +276,12 @@ export default function TeacherForm() {
         return str.trim().replace(/[^a-zA-Z0-9-]/g, '_').replace(/_+/g, '_');
       };
 
-      const uploadPromises = flatFiles.map(async ({ file, documentType }, index) => {
+      const uploadedFiles = [];
+
+      for (let i = 0; i < flatFiles.length; i++) {
+        const { file, documentType } = flatFiles[i];
+        setSubmittingText(`Uploading document ${i + 1} of ${flatFiles.length}...`);
+
         let fileToUpload = file;
         let ext = file.name.split('.').pop()?.toLowerCase() || 'pdf';
 
@@ -341,7 +348,7 @@ export default function TeacherForm() {
         }
 
         // Rename logic: 01_Teacher Name.pdf
-        const paddedIndex = String(index + 1).padStart(2, '0');
+        const paddedIndex = String(i + 1).padStart(2, '0');
         const sanitizedTeacher = sanitizeForFilename(form.teacherName);
         const newFilename = `${paddedIndex}_${sanitizedTeacher}.${ext}`;
         const renamedFile = new File([fileToUpload], newFilename, { type: fileToUpload.type });
@@ -368,25 +375,25 @@ export default function TeacherForm() {
         });
 
         if (!response.ok) {
-          throw new Error('Cloudinary upload failed');
+          throw new Error(`Cloudinary upload failed for ${newFilename}`);
         }
 
         const data = await response.json();
         const downloadURL = data.secure_url;
 
-        return {
+        uploadedFiles.push({
           documentType,
           downloadURL,
           fileName: newFilename,
-        };
-      });
+        });
+      }
 
-      const uploadedFiles = await Promise.all(uploadPromises);
+      setSubmittingText('Saving to database...');
 
       // Save to Firestore
       await addDoc(collection(db, 'submissions'), {
         ...form,
-        documents: uploadedFiles.filter(Boolean),
+        documents: uploadedFiles,
         submittedBy: user?.uid ?? '',
         submittedByEmail: user?.email ?? '',
         submittedAt: serverTimestamp(),
@@ -649,7 +656,7 @@ export default function TeacherForm() {
                 marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'all 0.15s',
               }}
             >
-              {submitting ? 'Submitting…' : (<><Send size={16} /> Submit Documents</>)}
+              {submitting ? submittingText : (<><Send size={16} /> Submit Documents</>)}
             </button>
             <button
               onClick={() => setStep('form')}

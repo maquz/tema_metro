@@ -55,6 +55,7 @@ export default function AdminDashboard() {
 
   // Download state
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [bulkDownloading, setBulkDownloading] = useState(false);
 
   // Real-time Firestore Listeners
   useEffect(() => {
@@ -245,6 +246,55 @@ export default function AdminDashboard() {
     setDownloadingId(null);
   };
 
+  const handleDownloadAllSubmissions = async () => {
+    if (filteredSubmissions.length === 0) {
+      alert('No submissions available to download.');
+      return;
+    }
+    
+    if (!window.confirm(`Are you sure you want to download all ${filteredSubmissions.length} filtered submissions? This may take a while.`)) {
+      return;
+    }
+
+    setBulkDownloading(true);
+    try {
+      const zip = new JSZip();
+      
+      // Loop through filteredSubmissions sequentially
+      for (let i = 0; i < filteredSubmissions.length; i++) {
+        const sub = filteredSubmissions[i];
+        if (!sub.documents || sub.documents.length === 0) continue;
+        
+        const folderName = `${sub.teacherName || 'Teacher'}_${sub.category === 'School' ? sub.school : 'Office'}`.replace(/[^a-zA-Z0-9- _]/g, '');
+        const teacherFolder = zip.folder(folderName);
+        
+        // Inside each folder, download that teacher's uploaded files
+        await Promise.all(
+          sub.documents.map(async (docItem: any, idx: number) => {
+            try {
+              const response = await fetch(docItem.downloadURL);
+              if (!response.ok) throw new Error(`Failed to fetch ${docItem.fileName}`);
+              const blob = await response.blob();
+              const paddedIndex = String(idx + 1).padStart(2, '0');
+              const fileName = `${paddedIndex}_${sub.teacherName || 'file'}.pdf`.replace(/[^a-zA-Z0-9- _.]/g, '');
+              teacherFolder?.file(fileName, blob);
+            } catch (e) {
+              console.error('Error fetching document:', e);
+            }
+          })
+        );
+      }
+      
+      const content = await zip.generateAsync({ type: 'blob' });
+      const dateStr = new Date().toISOString().slice(0, 10);
+      saveAs(content, `Bulk_Submissions_${dateStr}.zip`);
+    } catch (err) {
+      console.error('Bulk download error:', err);
+      alert('Failed to create bulk ZIP file. Please try again.');
+    }
+    setBulkDownloading(false);
+  };
+
   // Metrics calculations
   const totalSubmissions = submissions.length;
   
@@ -406,13 +456,20 @@ export default function AdminDashboard() {
                 />
               </div>
 
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px', flexDirection: 'column' }}>
                 <button
                   onClick={handleExportCSV}
                   disabled={filteredSubmissions.length === 0}
                   style={{ width: '100%', padding: '11px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#CE1126', color: '#FFFFFF', fontSize: '13px', fontWeight: '700', cursor: filteredSubmissions.length === 0 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'all 0.2s', opacity: filteredSubmissions.length === 0 ? 0.6 : 1 }}
                 >
                   <Download size={14} /> Export CSV
+                </button>
+                <button
+                  onClick={handleDownloadAllSubmissions}
+                  disabled={filteredSubmissions.length === 0 || bulkDownloading}
+                  style={{ width: '100%', padding: '11px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#002147', color: '#FFFFFF', fontSize: '13px', fontWeight: '700', cursor: (filteredSubmissions.length === 0 || bulkDownloading) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'all 0.2s', opacity: (filteredSubmissions.length === 0 || bulkDownloading) ? 0.6 : 1 }}
+                >
+                  <FolderDown size={14} /> {bulkDownloading ? 'Creating ZIP...' : 'Download All (ZIP)'}
                 </button>
               </div>
             </div>
