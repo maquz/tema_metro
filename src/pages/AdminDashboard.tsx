@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, onSnapshot, doc, updateDoc, deleteDoc, addDoc } from 'firebase/firestore';
+import { auth } from '../firebase';
+import { sendPasswordResetEmail } from 'firebase/auth';
 import { useAuth } from '../context/AuthContext';
 import Papa from 'papaparse';
 import JSZip from 'jszip';
@@ -9,7 +11,7 @@ import Footer from '../components/Footer';
 import { 
   LogOut, Users, FileText, Activity, Search, Download, 
   ChevronRight, ExternalLink, BarChart3, TrendingUp, GraduationCap, Building2, ShieldCheck,
-  Pencil, Trash2, FolderDown, Plus
+  Pencil, Trash2, FolderDown, Plus, KeyRound, X, Save
 } from 'lucide-react';
 
 const CIRCUITS = [
@@ -69,6 +71,10 @@ export default function AdminDashboard() {
 
   // User Management State
   const [userSearchTerm, setUserSearchTerm] = useState('');
+  const [editUserModal, setEditUserModal] = useState<any | null>(null);
+  const [editUserRole, setEditUserRole] = useState('');
+  const [editUserSaving, setEditUserSaving] = useState(false);
+  const [resetEmailSending, setResetEmailSending] = useState<string | null>(null);
 
   // Schools Management State
   const [schoolsData, setSchoolsData] = useState<any[]>([]);
@@ -197,6 +203,37 @@ export default function AdminDashboard() {
       console.error('Error updating role:', err);
       alert('Failed to update role. Please try again.');
     }
+  };
+
+  const handleOpenEditUser = (u: any) => {
+    setEditUserModal(u);
+    setEditUserRole(u.role || 'teacher');
+  };
+
+  const handleSaveEditUser = async () => {
+    if (!editUserModal) return;
+    setEditUserSaving(true);
+    try {
+      await updateDoc(doc(db, 'users', editUserModal.id), { role: editUserRole });
+      setEditUserModal(null);
+    } catch (err) {
+      console.error('Error saving user:', err);
+      alert('Failed to save changes.');
+    }
+    setEditUserSaving(false);
+  };
+
+  const handleSendPasswordReset = async (email: string) => {
+    if (!email) return;
+    setResetEmailSending(email);
+    try {
+      await sendPasswordResetEmail(auth, email);
+      alert(`Password reset email sent to ${email}`);
+    } catch (err: any) {
+      console.error('Password reset error:', err);
+      alert(`Failed to send password reset email: ${err.message}`);
+    }
+    setResetEmailSending(null);
   };
 
   const handleOpenEdit = (sub: any) => {
@@ -613,7 +650,10 @@ export default function AdminDashboard() {
         {activeTab === 'users' && (
           <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)', overflow: 'hidden' }}>
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #E5E7EB', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#002147', margin: 0 }}>Registered Portal Users</h3>
+              <div>
+                <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#002147', margin: '0 0 2px' }}>Registered Portal Users</h3>
+                <p style={{ fontSize: '12px', color: '#6B7280', margin: 0 }}>{users.length} total users registered</p>
+              </div>
               <div style={{ position: 'relative', width: '300px' }}>
                 <Search size={16} color="#9CA3AF" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
                 <input 
@@ -621,7 +661,7 @@ export default function AdminDashboard() {
                   value={userSearchTerm} 
                   onChange={e => setUserSearchTerm(e.target.value)} 
                   placeholder="Search by email..." 
-                  style={{ width: '100%', padding: '8px 12px 8px 36px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '13px', outline: 'none' }}
+                  style={{ width: '100%', padding: '8px 12px 8px 36px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
                 />
               </div>
             </div>
@@ -635,7 +675,7 @@ export default function AdminDashboard() {
                     <th style={{ padding: '16px 24px', color: '#4B5563', fontWeight: '600' }}>Online Status</th>
                     <th style={{ padding: '16px 24px', color: '#4B5563', fontWeight: '600' }}>Last Active Time</th>
                     <th style={{ padding: '16px 24px', color: '#4B5563', fontWeight: '600' }}>Registered On</th>
-                    {role === 'admin' && <th style={{ padding: '16px 24px', color: '#4B5563', fontWeight: '600', textAlign: 'center' }}>Actions</th>}
+                    {role === 'admin' && <th style={{ padding: '16px 24px', color: '#4B5563', fontWeight: '600', textAlign: 'center', minWidth: '200px' }}>Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -679,22 +719,29 @@ export default function AdminDashboard() {
                           {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'N/A'}
                         </td>
                         {role === 'admin' && (
-                          <td style={{ padding: '16px 24px', textAlign: 'center' }}>
-                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', alignItems: 'center' }}>
-                              <select
-                                value={u.role || 'teacher'}
-                                disabled={u.id === user?.uid} // prevent self-demotion
-                                onChange={e => handleRoleChange(u.id, e.target.value)}
-                                style={{ padding: '6px 10px', borderRadius: '6px', border: '1.5px solid #D1D5DB', fontSize: '12px', fontWeight: '600', cursor: u.id === user?.uid ? 'not-allowed' : 'pointer', outline: 'none' }}
+                          <td style={{ padding: '12px 24px', textAlign: 'center' }}>
+                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap' }}>
+                              {/* Edit Role button */}
+                              <button
+                                onClick={() => handleOpenEditUser(u)}
+                                title="Edit User Role"
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '6px 10px', borderRadius: '6px', border: 'none', backgroundColor: '#D97706', color: '#FFF', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                               >
-                                <option value="teacher">Teacher</option>
-                                <option value="metro_officer">Metro Officer</option>
-                                <option value="editor">Editor</option>
-                                <option value="admin">Admin</option>
-                              </select>
+                                <Pencil size={13} /> Edit
+                              </button>
+                              {/* Password Reset button */}
+                              <button
+                                onClick={() => handleSendPasswordReset(u.email)}
+                                disabled={resetEmailSending === u.email}
+                                title="Send Password Reset Email"
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '6px 10px', borderRadius: '6px', border: 'none', backgroundColor: '#0369A1', color: '#FFF', fontSize: '12px', fontWeight: '600', cursor: resetEmailSending === u.email ? 'not-allowed' : 'pointer', opacity: resetEmailSending === u.email ? 0.7 : 1 }}
+                              >
+                                <KeyRound size={13} /> {resetEmailSending === u.email ? '...' : 'Reset PW'}
+                              </button>
+                              {/* Delete button */}
                               <button
                                 onClick={async () => {
-                                  if (window.confirm(`Are you sure you want to delete profile access for ${u.email}?`)) {
+                                  if (window.confirm(`Are you sure you want to delete portal access for ${u.email}? This will remove their role but they can still log in.`)) {
                                     try {
                                       await deleteDoc(doc(db, 'users', u.id));
                                     } catch (err) {
@@ -705,9 +752,9 @@ export default function AdminDashboard() {
                                 }}
                                 disabled={u.id === user?.uid}
                                 title="Delete User Access"
-                                style={{ padding: '6px 10px', borderRadius: '6px', border: 'none', backgroundColor: '#CE1126', color: '#FFF', cursor: u.id === user?.uid ? 'not-allowed' : 'pointer', opacity: u.id === user?.uid ? 0.5 : 1 }}
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '6px 10px', borderRadius: '6px', border: 'none', backgroundColor: '#CE1126', color: '#FFF', fontSize: '12px', fontWeight: '600', cursor: u.id === user?.uid ? 'not-allowed' : 'pointer', opacity: u.id === user?.uid ? 0.5 : 1 }}
                               >
-                                <Trash2 size={14} />
+                                <Trash2 size={13} /> Del
                               </button>
                             </div>
                           </td>
@@ -717,6 +764,84 @@ export default function AdminDashboard() {
                   })}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {/* EDIT USER MODAL */}
+        {editUserModal && (
+          <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
+            <div style={{ backgroundColor: '#FFFFFF', borderRadius: '20px', padding: '32px', width: '100%', maxWidth: '440px', boxShadow: '0 25px 50px rgba(0,0,0,0.25)' }}>
+              {/* Modal Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                <div>
+                  <h3 style={{ fontSize: '18px', fontWeight: '800', color: '#002147', margin: '0 0 4px' }}>Edit User</h3>
+                  <p style={{ fontSize: '12px', color: '#6B7280', margin: 0 }}>Update role and send password reset</p>
+                </div>
+                <button onClick={() => setEditUserModal(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280', padding: '4px' }}>
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Email display */}
+              <div style={{ backgroundColor: '#F3F4F6', borderRadius: '10px', padding: '12px 16px', marginBottom: '20px' }}>
+                <div style={{ fontSize: '11px', fontWeight: '700', color: '#6B7280', textTransform: 'uppercase', marginBottom: '4px' }}>Email Address</div>
+                <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{editUserModal.email}</div>
+              </div>
+
+              {/* Role selector */}
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#374151', textTransform: 'uppercase', marginBottom: '8px' }}>Assign Role</label>
+                <select
+                  value={editUserRole}
+                  onChange={e => setEditUserRole(e.target.value)}
+                  disabled={editUserModal.id === user?.uid}
+                  style={{ width: '100%', padding: '12px 14px', borderRadius: '10px', border: '1.5px solid #D1D5DB', fontSize: '14px', fontWeight: '600', outline: 'none', backgroundColor: '#FFF', cursor: editUserModal.id === user?.uid ? 'not-allowed' : 'pointer' }}
+                >
+                  <option value="teacher">🎓 Teacher</option>
+                  <option value="metro_officer">🏛️ Metro Officer</option>
+                  <option value="editor">✏️ Editor</option>
+                  <option value="admin">🔐 Admin</option>
+                </select>
+                {editUserModal.id === user?.uid && (
+                  <p style={{ fontSize: '12px', color: '#CE1126', marginTop: '6px' }}>You cannot change your own role.</p>
+                )}
+              </div>
+
+              {/* Password Reset section */}
+              <div style={{ backgroundColor: '#EFF6FF', borderRadius: '10px', padding: '16px', marginBottom: '24px' }}>
+                <div style={{ fontSize: '12px', fontWeight: '700', color: '#1D4ED8', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <KeyRound size={14} /> Password Recovery
+                </div>
+                <p style={{ fontSize: '12px', color: '#374151', margin: '0 0 12px', lineHeight: '1.5' }}>
+                  Send a password reset link to <strong>{editUserModal.email}</strong>. They will receive an email with a link to set a new password.
+                </p>
+                <button
+                  onClick={() => handleSendPasswordReset(editUserModal.email)}
+                  disabled={resetEmailSending === editUserModal.email}
+                  style={{ width: '100%', padding: '10px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#1D4ED8', color: '#FFF', fontSize: '13px', fontWeight: '700', cursor: resetEmailSending === editUserModal.email ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', opacity: resetEmailSending === editUserModal.email ? 0.7 : 1 }}
+                >
+                  <KeyRound size={14} />
+                  {resetEmailSending === editUserModal.email ? 'Sending...' : 'Send Password Reset Email'}
+                </button>
+              </div>
+
+              {/* Action buttons */}
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  onClick={() => setEditUserModal(null)}
+                  style={{ flex: 1, padding: '12px', borderRadius: '10px', border: '1.5px solid #D1D5DB', backgroundColor: '#FFF', color: '#374151', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveEditUser}
+                  disabled={editUserSaving || editUserModal.id === user?.uid}
+                  style={{ flex: 2, padding: '12px', borderRadius: '10px', border: 'none', backgroundColor: editUserModal.id === user?.uid ? '#E5E7EB' : '#002147', color: editUserModal.id === user?.uid ? '#9CA3AF' : '#FFF', fontSize: '14px', fontWeight: '700', cursor: (editUserSaving || editUserModal.id === user?.uid) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                >
+                  <Save size={15} /> {editUserSaving ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
             </div>
           </div>
         )}
