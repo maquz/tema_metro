@@ -191,19 +191,6 @@ export default function AdminDashboard() {
     document.body.removeChild(link);
   };
 
-  const handleRoleChange = async (userId: string, newRole: string) => {
-    if (role !== 'admin') {
-      alert('Only Admins can change user roles.');
-      return;
-    }
-    try {
-      const userRef = doc(db, 'users', userId);
-      await updateDoc(userRef, { role: newRole });
-    } catch (err) {
-      console.error('Error updating role:', err);
-      alert('Failed to update role. Please try again.');
-    }
-  };
 
   const handleOpenEditUser = (u: any) => {
     setEditUserModal(u);
