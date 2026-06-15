@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { CheckCircle, ChevronDown, User, FileText, Upload, Send, X, LogOut, ShieldAlert } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 import jsPDF from 'jspdf';
-import { collection, addDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, doc, serverTimestamp, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import ImageCropperModal from '../components/ImageCropperModal';
@@ -22,6 +22,15 @@ const DOCUMENTS = [
 ];
 
 type Step = 'form' | 'documents' | 'success';
+
+interface ExistingFile {
+  isExisting: true;
+  downloadURL: string;
+  fileName: string;
+  documentType: string;
+}
+
+type UploadFile = File | ExistingFile;
 
 interface FormData {
   category: string;
@@ -83,7 +92,7 @@ function InputField({ label, value, onChange, placeholder }: { label: string; va
   );
 }
 
-function FileUploadRow({ docLabel, index, filesList, onFilesChange }: { docLabel: string; index: number; filesList: File[]; onFilesChange: (f: File[]) => void; }) {
+function FileUploadRow({ docLabel, index, filesList, onFilesChange, isOptional }: { docLabel: string; index: number; filesList: UploadFile[]; onFilesChange: (f: UploadFile[]) => void; isOptional?: boolean }) {
   const ref = useRef<HTMLInputElement>(null);
   const [fileToCrop, setFileToCrop] = useState<File | null>(null);
   
@@ -123,17 +132,20 @@ function FileUploadRow({ docLabel, index, filesList, onFilesChange }: { docLabel
             {hasFiles ? <CheckCircle size={14} color="#fff" strokeWidth={2.5} /> : <span style={{ fontSize: '11px', fontWeight: '700', color: '#9CA3AF' }}>{index + 1}</span>}
           </div>
           <span style={{ fontSize: '13px', color: '#374151', fontWeight: hasFiles ? '600' : '400', lineHeight: '1.5', flex: 1 }}>
-            {docLabel}
+            {docLabel} {isOptional && <span style={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 'normal', marginLeft: '4px' }}>(Optional)</span>}
           </span>
         </div>
 
         {/* Upload area */}
         <div style={{ padding: '0 12px 12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {filesList.map((f, i) => (
+          {filesList.map((f, i) => {
+            const isExt = 'isExisting' in f;
+            const name = isExt ? (f as ExistingFile).fileName : (f as File).name;
+            return (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#D0E2FF', borderRadius: '8px', padding: '8px 12px' }}>
               <FileText size={14} color="#002147" />
               <span style={{ fontSize: '12px', color: '#002147', fontWeight: '500', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {f.name}
+                {name}
               </span>
               <button
                 onClick={() => handleRemoveFile(i)}
@@ -142,7 +154,7 @@ function FileUploadRow({ docLabel, index, filesList, onFilesChange }: { docLabel
                 <X size={14} color="#CE1126" />
               </button>
             </div>
-          ))}
+          )})}
           <button
             onClick={() => ref.current?.click()}
             style={{
@@ -181,10 +193,12 @@ export default function TeacherForm() {
     category: '', circuit: '', school: '', teacherName: '', sex: '', subject: 'English',
   });
   const [errors, setErrors] = useState<Partial<FormData>>({});
-  const [files, setFiles] = useState<File[][]>(DOCUMENTS.map(() => []));
+  const [files, setFiles] = useState<UploadFile[][]>(DOCUMENTS.map(() => []));
   const [submitting, setSubmitting] = useState(false);
   const [submittingText, setSubmittingText] = useState('Submitting...');
   const [schoolsData, setSchoolsData] = useState<any[]>([]);
+  const [mySubmissions, setMySubmissions] = useState<any[]>([]);
+  const [editSubmissionId, setEditSubmissionId] = useState<string | null>(null);
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'schools'), (snapshot) => {
@@ -193,6 +207,16 @@ export default function TeacherForm() {
     });
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, 'submissions'), where('submittedBy', '==', user.uid));
+    const unsub = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setMySubmissions(data);
+    });
+    return () => unsub();
+  }, [user]);
 
   const dynamicCircuits = Array.from(new Set(schoolsData.map(s => s.circuit))).sort();
   const getSchoolsForCircuit = (circuit: string) => schoolsData.filter(s => s.circuit === circuit).map(s => s.school).sort();
@@ -234,8 +258,35 @@ export default function TeacherForm() {
   };
 
   const handleProceed = () => { if (validate()) setStep('documents'); };
-  const setFileGroup = (i: number) => (fs: File[]) => setFiles(prev => prev.map((v, idx) => idx === i ? fs : v));
-  const allUploaded = files.every(group => group.length > 0);
+  const setFileGroup = (i: number) => (fs: UploadFile[]) => setFiles(prev => prev.map((v, idx) => idx === i ? fs : v));
+  const requiredUploadedCount = files.slice(0, 4).filter(group => group.length > 0).length;
+  const allUploaded = requiredUploadedCount === 4;
+
+  const handleEditSubmission = (sub: any) => {
+    setForm({
+      category: sub.category,
+      circuit: sub.circuit || '',
+      school: sub.school || '',
+      teacherName: sub.teacherName,
+      sex: sub.sex || '',
+      subject: sub.subject || 'English',
+    });
+    setEditSubmissionId(sub.id);
+    
+    const newFiles = DOCUMENTS.map(docName => {
+      const existingDocs = sub.documents?.filter((d: any) => d.documentType === docName) || [];
+      return existingDocs.map((d: any) => ({
+        isExisting: true,
+        downloadURL: d.downloadURL,
+        fileName: d.fileName,
+        documentType: d.documentType,
+      }));
+    });
+    setFiles(newFiles);
+    
+    setStep('form');
+    window.scrollTo(0, 0);
+  };
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -253,20 +304,26 @@ export default function TeacherForm() {
 
       for (let i = 0; i < flatFiles.length; i++) {
         const { file, documentType } = flatFiles[i];
+        
+        if ('isExisting' in file) {
+          uploadedFiles.push({ documentType, downloadURL: file.downloadURL, fileName: file.fileName });
+          continue;
+        }
+
         setSubmittingText(`Uploading document ${i + 1} of ${flatFiles.length}...`);
 
-        let fileToUpload = file;
-        let ext = file.name.split('.').pop()?.toLowerCase() || 'pdf';
+        let fileToUpload = file as File;
+        let ext = fileToUpload.name.split('.').pop()?.toLowerCase() || 'pdf';
 
         // Compress if it's an image and convert to PDF
-        if (file.type.startsWith('image/')) {
+        if (fileToUpload.type.startsWith('image/')) {
           const options = {
             maxSizeMB: 1,
             maxWidthOrHeight: 2048,
             useWebWorker: true,
           };
           try {
-            const compressedFile = await imageCompression(file, options);
+            const compressedFile = await imageCompression(fileToUpload, options);
 
             // Read compressed image as base64
             const base64Data = await new Promise<string>((resolve, reject) => {
@@ -364,13 +421,21 @@ export default function TeacherForm() {
       setSubmittingText('Saving to database...');
 
       // Save to Firestore
-      await addDoc(collection(db, 'submissions'), {
-        ...form,
-        documents: uploadedFiles,
-        submittedBy: user?.uid ?? '',
-        submittedByEmail: user?.email ?? '',
-        submittedAt: serverTimestamp(),
-      });
+      if (editSubmissionId) {
+        await updateDoc(doc(db, 'submissions', editSubmissionId), {
+          ...form,
+          documents: uploadedFiles,
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        await addDoc(collection(db, 'submissions'), {
+          ...form,
+          documents: uploadedFiles,
+          submittedBy: user?.uid ?? '',
+          submittedByEmail: user?.email ?? '',
+          submittedAt: serverTimestamp(),
+        });
+      }
 
       setSubmitting(false);
       setStep('success');
@@ -450,10 +515,10 @@ export default function TeacherForm() {
         <p style={{ fontSize: '14px', color: '#6B7280', textAlign: 'center', margin: '0 0 32px' }}>Would you like to upload another teacher's data or log off?</p>
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
           <button
-            onClick={() => { setStep('form'); setForm(f => ({ ...f, circuit: '', school: '', teacherName: '', sex: '', subject: 'English' })); setFiles(DOCUMENTS.map(() => [])); }}
+            onClick={() => { setStep('form'); setEditSubmissionId(null); setForm(f => ({ ...f, circuit: '', school: '', teacherName: '', sex: '', subject: 'English' })); setFiles(DOCUMENTS.map(() => [])); }}
             style={{ padding: '13px 28px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #002147, #001530)', color: '#FFFFFF', fontSize: '14px', fontWeight: '700', cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,33,71,0.3)' }}
           >
-            Upload another teacher's data
+            Go back to Form
           </button>
           <button
             onClick={logout}
@@ -534,10 +599,25 @@ export default function TeacherForm() {
       <div style={{ padding: '20px 16px' }}>
         {step === 'form' ? (
           <>
+            {mySubmissions.length > 0 && !editSubmissionId && (
+              <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '14px', fontWeight: '700', color: '#111827', margin: '0 0 12px' }}>Your Previous Submissions</h3>
+                {mySubmissions.map(sub => (
+                  <div key={sub.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', border: '1px solid #E5E7EB', borderRadius: '8px', marginBottom: '8px' }}>
+                    <div>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#002147' }}>{sub.teacherName}</div>
+                      <div style={{ fontSize: '12px', color: '#6B7280' }}>{sub.category === 'School' ? `${sub.school} (${sub.circuit})` : 'Education Office'}</div>
+                    </div>
+                    <button onClick={() => handleEditSubmission(sub)} style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #D1D5DB', backgroundColor: '#FFF', color: '#002147', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>Edit</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: '16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px' }}>
                 <User size={16} color="#002147" />
-                <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{currentRole === 'metro_officer' ? 'Education Officer' : 'Teacher Details'}</span>
+                <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{editSubmissionId ? 'Editing Record' : (currentRole === 'metro_officer' ? 'Education Officer' : 'Teacher Details')}</span>
               </div>
               
               {/* Note: The category is auto-assigned based on role, so we don't display the dropdown */}
@@ -577,12 +657,22 @@ export default function TeacherForm() {
                 </>
               )}
 
-              <button
-                onClick={handleProceed}
-                style={{ width: '100%', padding: '15px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #002147, #001530)', color: '#FFFFFF', fontSize: '15px', fontWeight: '700', cursor: 'pointer', letterSpacing: '0.02em', marginTop: '16px' }}
-              >
-                Proceed to Documents →
-              </button>
+              <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+                {editSubmissionId && (
+                  <button
+                    onClick={() => { setEditSubmissionId(null); setForm(f => ({ ...f, teacherName: '', circuit: '', school: '', sex: '', subject: 'English' })); setFiles(DOCUMENTS.map(() => [])); }}
+                    style={{ flex: 1, padding: '15px', borderRadius: '12px', border: '1.5px solid #D1D5DB', backgroundColor: '#FFF', color: '#374151', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}
+                  >
+                    Cancel Edit
+                  </button>
+                )}
+                <button
+                  onClick={handleProceed}
+                  style={{ flex: editSubmissionId ? 2 : 1, padding: '15px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #002147, #001530)', color: '#FFFFFF', fontSize: '15px', fontWeight: '700', cursor: 'pointer', letterSpacing: '0.02em' }}
+                >
+                  Proceed to Documents →
+                </button>
+              </div>
             </div>
           </>
         ) : (
@@ -607,15 +697,15 @@ export default function TeacherForm() {
                 Scan or upload each document using your camera or file picker.
               </p>
               {DOCUMENTS.map((doc, i) => (
-                <FileUploadRow key={i} index={i} docLabel={doc} filesList={files[i]} onFilesChange={setFileGroup(i)} />
+                <FileUploadRow key={i} index={i} docLabel={doc} filesList={files[i]} onFilesChange={setFileGroup(i)} isOptional={i === 4} />
               ))}
             </div>
 
             {/* Progress indicator */}
             <div style={{ backgroundColor: '#FFFFFF', borderRadius: '12px', padding: '12px 16px', marginBottom: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: '13px', color: '#374151', fontWeight: '500' }}>Documents uploaded</span>
+              <span style={{ fontSize: '13px', color: '#374151', fontWeight: '500' }}>Required documents uploaded</span>
               <span style={{ fontSize: '13px', fontWeight: '700', color: allUploaded ? '#002147' : '#6B7280' }}>
-                {files.filter(group => group.length > 0).length} / {DOCUMENTS.length}
+                {requiredUploadedCount} / 4
               </span>
             </div>
 
