@@ -80,6 +80,8 @@ export default function AdminDashboard() {
   const [schoolsData, setSchoolsData] = useState<any[]>([]);
   const [seeding, setSeeding] = useState(false);
   const [newSchool, setNewSchool] = useState({ circuit: '', school: '' });
+  const [editSchoolId, setEditSchoolId] = useState<string | null>(null);
+  const [editSchoolData, setEditSchoolData] = useState({ circuit: '', school: '' });
 
   // Real-time Firestore Listeners
   useEffect(() => {
@@ -927,20 +929,83 @@ export default function AdminDashboard() {
                   <tbody>
                     {schoolsData.slice().sort((a, b) => a.circuit.localeCompare(b.circuit) || a.school.localeCompare(b.school)).map((s: any) => (
                       <tr key={s.id} style={{ borderBottom: '1px solid #F3F4F6' }}>
-                        <td style={{ padding: '12px 16px', fontWeight: '600', color: '#374151' }}>{s.circuit}</td>
-                        <td style={{ padding: '12px 16px', color: '#111827' }}>{s.school}</td>
+                        <td style={{ padding: '12px 16px', fontWeight: '600', color: '#374151' }}>
+                          {editSchoolId === s.id ? (
+                            <input
+                              type="text"
+                              value={editSchoolData.circuit}
+                              onChange={e => setEditSchoolData(prev => ({ ...prev, circuit: e.target.value.toUpperCase() }))}
+                              style={{ width: '100%', padding: '6px', borderRadius: '4px', border: '1px solid #D1D5DB' }}
+                            />
+                          ) : s.circuit}
+                        </td>
+                        <td style={{ padding: '12px 16px', color: '#111827' }}>
+                          {editSchoolId === s.id ? (
+                            <input
+                              type="text"
+                              value={editSchoolData.school}
+                              onChange={e => setEditSchoolData(prev => ({ ...prev, school: e.target.value.toUpperCase() }))}
+                              style={{ width: '100%', padding: '6px', borderRadius: '4px', border: '1px solid #D1D5DB' }}
+                            />
+                          ) : s.school}
+                        </td>
                         <td style={{ padding: '8px 16px', textAlign: 'center' }}>
-                          <button
-                            onClick={async () => {
-                              if (window.confirm(`Delete ${s.school}?`)) {
-                                await deleteDoc(doc(db, 'schools', s.id));
-                              }
-                            }}
-                            style={{ background: 'none', border: 'none', color: '#CE1126', cursor: 'pointer', padding: '4px' }}
-                            title="Delete School"
-                          >
-                            <Trash2 size={16} />
-                          </button>
+                          <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                            {editSchoolId === s.id ? (
+                              <>
+                                <button
+                                  onClick={async () => {
+                                    if (!editSchoolData.circuit || !editSchoolData.school) return alert('Both fields required');
+                                    try {
+                                      await updateDoc(doc(db, 'schools', s.id), {
+                                        circuit: editSchoolData.circuit,
+                                        school: editSchoolData.school
+                                      });
+                                      setEditSchoolId(null);
+                                    } catch (err) {
+                                      console.error(err);
+                                      alert('Failed to update school.');
+                                    }
+                                  }}
+                                  style={{ background: 'none', border: 'none', color: '#10B981', cursor: 'pointer', padding: '4px' }}
+                                  title="Save Changes"
+                                >
+                                  <Save size={16} />
+                                </button>
+                                <button
+                                  onClick={() => setEditSchoolId(null)}
+                                  style={{ background: 'none', border: 'none', color: '#6B7280', cursor: 'pointer', padding: '4px' }}
+                                  title="Cancel"
+                                >
+                                  <X size={16} />
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() => {
+                                    setEditSchoolId(s.id);
+                                    setEditSchoolData({ circuit: s.circuit, school: s.school });
+                                  }}
+                                  style={{ background: 'none', border: 'none', color: '#D97706', cursor: 'pointer', padding: '4px' }}
+                                  title="Edit School"
+                                >
+                                  <Pencil size={16} />
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    if (window.confirm(`Delete ${s.school}?`)) {
+                                      await deleteDoc(doc(db, 'schools', s.id));
+                                    }
+                                  }}
+                                  style={{ background: 'none', border: 'none', color: '#CE1126', cursor: 'pointer', padding: '4px' }}
+                                  title="Delete School"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
