@@ -324,7 +324,7 @@ export default function AdminDashboard() {
     setBulkZipProgress({ current: 0, total: totalFiles, batch: 1, totalBatches: 1 });
     
     try {
-      const BATCH_SIZE = 50; // Zip 50 submissions at a time to prevent OOM crash
+      const BATCH_SIZE = 10; // Zip 10 submissions at a time to prevent OOM crash
       const totalBatches = Math.ceil(filteredSubmissions.length / BATCH_SIZE);
       let processedFiles = 0;
 
@@ -344,24 +344,23 @@ export default function AdminDashboard() {
           const folderName = `${sub.teacherName || 'Teacher'}_${sub.category === 'School' ? sub.school : 'Office'}`.replace(/[^a-zA-Z0-9- _]/g, '');
           const teacherFolder = zip.folder(folderName);
           
-          // Inside each folder, download that teacher's uploaded files
-          await Promise.all(
-            sub.documents.map(async (docItem: any, idx: number) => {
-              try {
-                const response = await fetch(docItem.downloadURL);
-                if (!response.ok) throw new Error(`Failed to fetch ${docItem.fileName}`);
-                const blob = await response.blob();
-                const paddedIndex = String(idx + 1).padStart(2, '0');
-                const fileName = `${paddedIndex}_${sub.teacherName || 'file'}.pdf`.replace(/[^a-zA-Z0-9- _.]/g, '');
-                teacherFolder?.file(fileName, blob);
-              } catch (e) {
-                console.error('Error fetching document:', e);
-              } finally {
-                processedFiles++;
-                setBulkZipProgress(prev => prev ? { ...prev, current: processedFiles } : null);
-              }
-            })
-          );
+          // Inside each folder, download that teacher's uploaded files sequentially
+          for (let idx = 0; idx < sub.documents.length; idx++) {
+            const docItem = sub.documents[idx];
+            try {
+              const response = await fetch(docItem.downloadURL);
+              if (!response.ok) throw new Error(`Failed to fetch ${docItem.fileName} (${response.status})`);
+              const blob = await response.blob();
+              const paddedIndex = String(idx + 1).padStart(2, '0');
+              const fileName = `${paddedIndex}_${sub.teacherName || 'file'}.pdf`.replace(/[^a-zA-Z0-9- _.]/g, '');
+              teacherFolder?.file(fileName, blob);
+            } catch (e) {
+              console.error('Error fetching document:', e);
+            } finally {
+              processedFiles++;
+              setBulkZipProgress(prev => prev ? { ...prev, current: processedFiles } : null);
+            }
+          }
         }
         
         const content = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
@@ -369,9 +368,9 @@ export default function AdminDashboard() {
         const batchSuffix = totalBatches > 1 ? `_Part${batchIdx + 1}` : '';
         saveAs(content, `Bulk_Submissions_${dateStr}${batchSuffix}.zip`);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Bulk download error:', err);
-      alert('Failed to create bulk ZIP file. Please try again.');
+      alert(`Failed to create bulk ZIP file. Error: ${err?.message || String(err)}`);
     } finally {
       setBulkDownloading(false);
       setBulkZipProgress(null);
