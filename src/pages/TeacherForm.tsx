@@ -196,8 +196,8 @@ export default function TeacherForm() {
   const [files, setFiles] = useState<UploadFile[][]>(DOCUMENTS.map(() => []));
   const [submitting, setSubmitting] = useState(false);
   const [submittingText, setSubmittingText] = useState('Submitting...');
-  const [schoolsData, setSchoolsData] = useState<Record<string, unknown>[]>([]);
-  const [mySubmissions, setMySubmissions] = useState<Record<string, unknown>[]>([]);
+  const [schoolsData, setSchoolsData] = useState<any[]>([]);
+  const [mySubmissions, setMySubmissions] = useState<any[]>([]);
   const [editSubmissionId, setEditSubmissionId] = useState<string | null>(null);
 
   useEffect(() => {
