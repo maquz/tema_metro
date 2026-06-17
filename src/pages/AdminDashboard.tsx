@@ -11,7 +11,7 @@ import Footer from '../components/Footer';
 import { 
   LogOut, Users, FileText, Activity, Search, Download, 
   ChevronRight, ExternalLink, BarChart3, TrendingUp, GraduationCap, Building2, ShieldCheck,
-  Pencil, Trash2, FolderDown, Plus, KeyRound, X, Save
+  Pencil, Trash2, FolderDown, Plus, KeyRound, X, Save, Share2
 } from 'lucide-react';
 
 const CIRCUITS = [
@@ -68,6 +68,7 @@ export default function AdminDashboard() {
   // Download state
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [bulkDownloading, setBulkDownloading] = useState(false);
+  const [bulkZipProgress, setBulkZipProgress] = useState<{ current: number; total: number; batch: number; totalBatches: number } | null>(null);
 
   // User Management State
   const [userSearchTerm, setUserSearchTerm] = useState('');
@@ -302,47 +303,79 @@ export default function AdminDashboard() {
       return;
     }
     
-    if (!window.confirm(`Are you sure you want to download all ${filteredSubmissions.length} filtered submissions? This may take a while.`)) {
+    // Calculate total files to be downloaded
+    let totalFiles = 0;
+    filteredSubmissions.forEach(sub => {
+      if (sub.documents && sub.documents.length > 0) {
+        totalFiles += sub.documents.length;
+      }
+    });
+
+    if (totalFiles === 0) {
+      alert('No documents found in the selected submissions.');
+      return;
+    }
+    
+    if (!window.confirm(`Are you sure you want to download ${filteredSubmissions.length} submissions containing a total of ${totalFiles} documents? This may take several minutes.`)) {
       return;
     }
 
     setBulkDownloading(true);
+    setBulkZipProgress({ current: 0, total: totalFiles, batch: 1, totalBatches: 1 });
+    
     try {
-      const zip = new JSZip();
-      
-      // Loop through filteredSubmissions sequentially
-      for (let i = 0; i < filteredSubmissions.length; i++) {
-        const sub = filteredSubmissions[i];
-        if (!sub.documents || sub.documents.length === 0) continue;
+      const BATCH_SIZE = 50; // Zip 50 submissions at a time to prevent OOM crash
+      const totalBatches = Math.ceil(filteredSubmissions.length / BATCH_SIZE);
+      let processedFiles = 0;
+
+      for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
+        setBulkZipProgress(prev => prev ? { ...prev, batch: batchIdx + 1, totalBatches } : null);
         
-        const folderName = `${sub.teacherName || 'Teacher'}_${sub.category === 'School' ? sub.school : 'Office'}`.replace(/[^a-zA-Z0-9- _]/g, '');
-        const teacherFolder = zip.folder(folderName);
+        const zip = new JSZip();
+        const startIdx = batchIdx * BATCH_SIZE;
+        const endIdx = Math.min(startIdx + BATCH_SIZE, filteredSubmissions.length);
+        const currentBatch = filteredSubmissions.slice(startIdx, endIdx);
         
-        // Inside each folder, download that teacher's uploaded files
-        await Promise.all(
-          sub.documents.map(async (docItem: any, idx: number) => {
-            try {
-              const response = await fetch(docItem.downloadURL);
-              if (!response.ok) throw new Error(`Failed to fetch ${docItem.fileName}`);
-              const blob = await response.blob();
-              const paddedIndex = String(idx + 1).padStart(2, '0');
-              const fileName = `${paddedIndex}_${sub.teacherName || 'file'}.pdf`.replace(/[^a-zA-Z0-9- _.]/g, '');
-              teacherFolder?.file(fileName, blob);
-            } catch (e) {
-              console.error('Error fetching document:', e);
-            }
-          })
-        );
+        // Loop through current batch sequentially
+        for (let i = 0; i < currentBatch.length; i++) {
+          const sub = currentBatch[i];
+          if (!sub.documents || sub.documents.length === 0) continue;
+          
+          const folderName = `${sub.teacherName || 'Teacher'}_${sub.category === 'School' ? sub.school : 'Office'}`.replace(/[^a-zA-Z0-9- _]/g, '');
+          const teacherFolder = zip.folder(folderName);
+          
+          // Inside each folder, download that teacher's uploaded files
+          await Promise.all(
+            sub.documents.map(async (docItem: any, idx: number) => {
+              try {
+                const response = await fetch(docItem.downloadURL);
+                if (!response.ok) throw new Error(`Failed to fetch ${docItem.fileName}`);
+                const blob = await response.blob();
+                const paddedIndex = String(idx + 1).padStart(2, '0');
+                const fileName = `${paddedIndex}_${sub.teacherName || 'file'}.pdf`.replace(/[^a-zA-Z0-9- _.]/g, '');
+                teacherFolder?.file(fileName, blob);
+              } catch (e) {
+                console.error('Error fetching document:', e);
+              } finally {
+                processedFiles++;
+                setBulkZipProgress(prev => prev ? { ...prev, current: processedFiles } : null);
+              }
+            })
+          );
+        }
+        
+        const content = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+        const dateStr = new Date().toISOString().slice(0, 10);
+        const batchSuffix = totalBatches > 1 ? `_Part${batchIdx + 1}` : '';
+        saveAs(content, `Bulk_Submissions_${dateStr}${batchSuffix}.zip`);
       }
-      
-      const content = await zip.generateAsync({ type: 'blob' });
-      const dateStr = new Date().toISOString().slice(0, 10);
-      saveAs(content, `Bulk_Submissions_${dateStr}.zip`);
     } catch (err) {
       console.error('Bulk download error:', err);
       alert('Failed to create bulk ZIP file. Please try again.');
+    } finally {
+      setBulkDownloading(false);
+      setBulkZipProgress(null);
     }
-    setBulkDownloading(false);
   };
 
   const dynamicCircuits = Array.from(new Set(schoolsData.map((s: any) => s.circuit))).sort();
@@ -528,7 +561,10 @@ export default function AdminDashboard() {
                   disabled={filteredSubmissions.length === 0 || bulkDownloading}
                   style={{ width: '100%', padding: '11px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#002147', color: '#FFFFFF', fontSize: '13px', fontWeight: '700', cursor: (filteredSubmissions.length === 0 || bulkDownloading) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'all 0.2s', opacity: (filteredSubmissions.length === 0 || bulkDownloading) ? 0.6 : 1 }}
                 >
-                  <FolderDown size={14} /> {bulkDownloading ? 'Creating ZIP...' : 'Download All (ZIP)'}
+                  <FolderDown size={14} /> 
+                  {bulkDownloading && bulkZipProgress 
+                    ? `Part ${bulkZipProgress.batch}/${bulkZipProgress.totalBatches} (${bulkZipProgress.current}/${bulkZipProgress.total})...` 
+                    : 'Download All (ZIP)'}
                 </button>
               </div>
             </div>
@@ -1232,21 +1268,46 @@ export default function AdminDashboard() {
                       </div>
 
                       {matchingDoc ? (
-                        <a 
-                          href={matchingDoc.downloadURL} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          style={{ 
-                            display: 'flex', alignItems: 'center', gap: '4px', textDecoration: 'none',
-                            color: '#10B981', fontSize: '12px', fontWeight: '700', backgroundColor: '#FFF',
-                            border: '1.5px solid #10B981', padding: '6px 12px', borderRadius: '6px',
-                            transition: 'all 0.2s', flexShrink: 0
-                          }}
-                          onMouseOver={e => { e.currentTarget.style.backgroundColor = '#10B981'; e.currentTarget.style.color = '#FFF'; }}
-                          onMouseOut={e => { e.currentTarget.style.backgroundColor = '#FFF'; e.currentTarget.style.color = '#10B981'; }}
-                        >
-                          Open File <ExternalLink size={12} />
-                        </a>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <button
+                            onClick={() => {
+                              if (navigator.share) {
+                                navigator.share({
+                                  title: docName,
+                                  url: matchingDoc.downloadURL
+                                }).catch(console.error);
+                              } else {
+                                navigator.clipboard.writeText(matchingDoc.downloadURL);
+                                alert('Link copied to clipboard!');
+                              }
+                            }}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '4px', textDecoration: 'none',
+                              color: '#6B7280', fontSize: '12px', fontWeight: '700', backgroundColor: '#FFF',
+                              border: '1.5px solid #D1D5DB', padding: '6px 12px', borderRadius: '6px',
+                              transition: 'all 0.2s', flexShrink: 0, cursor: 'pointer'
+                            }}
+                            onMouseOver={e => { e.currentTarget.style.backgroundColor = '#F3F4F6'; e.currentTarget.style.color = '#374151'; }}
+                            onMouseOut={e => { e.currentTarget.style.backgroundColor = '#FFF'; e.currentTarget.style.color = '#6B7280'; }}
+                          >
+                            Share <Share2 size={12} />
+                          </button>
+                          <a 
+                            href={matchingDoc.downloadURL} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            style={{ 
+                              display: 'flex', alignItems: 'center', gap: '4px', textDecoration: 'none',
+                              color: '#10B981', fontSize: '12px', fontWeight: '700', backgroundColor: '#FFF',
+                              border: '1.5px solid #10B981', padding: '6px 12px', borderRadius: '6px',
+                              transition: 'all 0.2s', flexShrink: 0
+                            }}
+                            onMouseOver={e => { e.currentTarget.style.backgroundColor = '#10B981'; e.currentTarget.style.color = '#FFF'; }}
+                            onMouseOut={e => { e.currentTarget.style.backgroundColor = '#FFF'; e.currentTarget.style.color = '#10B981'; }}
+                          >
+                            Open File <ExternalLink size={12} />
+                          </a>
+                        </div>
                       ) : (
                         <span style={{ fontSize: '12px', color: '#9CA3AF', fontWeight: '600', fontStyle: 'italic', flexShrink: 0 }}>
                           Missing
