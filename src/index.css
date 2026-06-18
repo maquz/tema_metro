@@ -9,3 +9,53 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* GES Personal Record Form Styling (Dark Blue Theme) */
+.ges-header { background: linear-gradient(135deg, #002147, #001530); color: white; padding: 16px; text-align: center; }
+.ges-header h1 { font-size: 14px; font-weight: 800; letter-spacing: 0.5px; margin: 0 0 4px; text-transform: uppercase; }
+.ges-header h2 { font-size: 11px; font-weight: 500; margin: 0; opacity: 0.9; }
+
+.section-title { background: #002147; color: white; padding: 10px 16px; font-size: 13px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; }
+
+.form-card { background: white; border-radius: 8px; margin: 10px 12px; padding: 14px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+
+.field-label { font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 5px; }
+.field-label .required { color: #dc2626; margin-left: 2px; }
+
+.field-input { width: 100%; padding: 9px 11px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; color: #111827; background: #fafafa; outline: none; transition: border-color 0.15s; }
+.field-input:focus { border-color: #002147; background: white; }
+select.field-input { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23555' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px; }
+
+.form-row { display: grid; gap: 10px; margin-bottom: 12px; }
+.form-row.cols-2 { grid-template-columns: 1fr 1fr; }
+.form-row.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+.form-row.cols-1 { grid-template-columns: 1fr; }
+
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table.dyn-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 400px; }
+table.dyn-table th { background: #002147; color: white; padding: 7px 8px; text-align: left; font-size: 11px; font-weight: 600; white-space: nowrap; }
+table.dyn-table td { padding: 5px 4px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+table.dyn-table input, table.dyn-table select { width: 100%; padding: 5px 7px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; min-width: 70px; }
+table.dyn-table .del-btn { color: #dc2626; background: none; border: none; cursor: pointer; font-size: 16px; padding: 0 4px; line-height: 1; }
+
+.add-row-btn { display: flex; align-items: center; gap: 6px; background: none; border: 1px dashed #002147; color: #002147; padding: 7px 14px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; margin-top: 10px; width: 100%; justify-content: center; }
+.add-row-btn:active { background: #E8F0FE; }
+
+.nav-bar { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 600px; background: white; border-top: 1px solid #e5e7eb; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; z-index: 100; }
+.btn-back { padding: 10px 20px; background: white; border: 1.5px solid #002147; color: #002147; border-radius: 7px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.btn-next { padding: 10px 28px; background: #002147; border: none; color: white; border-radius: 7px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.btn-back:active { background: #E8F0FE; }
+.btn-next:active { opacity: 0.85; }
+
+.progress-bar { height: 4px; background: #e5e7eb; }
+.progress-fill { height: 100%; background: #002147; transition: width 0.3s ease; }
+.progress-label { text-align: center; font-size: 11px; color: #6b7280; padding: 5px 0 2px; }
+
+.photo-box { width: 100px; height: 120px; border: 2px dashed #d1d5db; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; font-size: 11px; color: #9ca3af; text-align: center; overflow: hidden; flex-shrink: 0; }
+.photo-box img { width: 100%; height: 100%; object-fit: cover; }
+
+.summary-item { display: flex; gap: 8px; padding: 7px 0; border-bottom: 1px solid #f3f4f6; }
+.summary-key { font-size: 12px; color: #6b7280; width: 130px; flex-shrink: 0; }
+.summary-val { font-size: 12px; color: #111827; font-weight: 500; flex: 1; }
+
+.sig-line { border-top: 1px solid #374151; margin-top: 12px; padding-top: 6px; font-size: 11px; color: #374151; text-align: center; }
