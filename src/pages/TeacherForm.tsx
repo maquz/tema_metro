@@ -85,9 +85,8 @@ const initForm = (): FormState => ({
 
 const SECTIONS = [
   'Personal Information',
-  'Academic Qualifications',
-  'Professional Qualifications',
-  'Promotions',
+  'Family & Languages',
+  'Qualifications & Promotions',
   'Employment / Posting History',
   'Name Change & Signature',
   'Document Scans',
@@ -140,7 +139,6 @@ function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, error
       return next;
     });
   };
-  const updChild = (i: number, v: string) => setF((p: FormState) => { const c = [...p.children]; c[i] = { nameAndDob: v }; return { ...p, children: c }; });
 
   const isEducationOffice = f.category === 'Education Office';
   const isSchool = f.category === 'School';
@@ -229,7 +227,16 @@ function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, error
         </div>
       </div>
 
-      <div className="section-title" style={{ margin: '0 0 0 0' }}>Next of Kin</div>
+    </div>
+  );
+}
+
+function SectionFamilyLang({ f, setF }: { f: FormState; setF: React.Dispatch<React.SetStateAction<FormState>> }) {
+  const upd = (key: keyof FormState) => (v: string) => setF(p => ({ ...p, [key]: v }));
+  const updChild = (i: number, v: string) => setF((p: FormState) => { const c = [...p.children]; c[i] = { nameAndDob: v }; return { ...p, children: c }; });
+  return (
+    <div style={{ paddingBottom: 80 }}>
+      <div className="section-title">Next of Kin</div>
       <div className="form-card">
         <div className="form-row cols-1">
           <Field label="Next of Kin Name"><Inp value={f.nextOfKin} onChange={upd('nextOfKin')} placeholder="Full name" /></Field>
@@ -323,9 +330,11 @@ function DynTable<T extends Record<string, string>>({
   );
 }
 
-function SectionAcademic({ f, setF }: { f: FormState; setF: React.Dispatch<React.SetStateAction<FormState>> }) {
+function SectionQualifications({ f, setF }: { f: FormState; setF: React.Dispatch<React.SetStateAction<FormState>> }) {
+  const upd = (key: keyof FormState) => (v: string) => setF(p => ({ ...p, [key]: v }));
   return (
     <div style={{ paddingBottom: 80 }}>
+      <div className="section-title">Academic Qualifications</div>
       <div className="form-card">
         <DynTable
           rows={f.academic}
@@ -337,13 +346,8 @@ function SectionAcademic({ f, setF }: { f: FormState; setF: React.Dispatch<React
           ]}
         />
       </div>
-    </div>
-  );
-}
 
-function SectionProfessional({ f, setF }: { f: FormState; setF: React.Dispatch<React.SetStateAction<FormState>> }) {
-  return (
-    <div style={{ paddingBottom: 80 }}>
+      <div className="section-title">Professional Qualifications</div>
       <div className="form-card">
         <DynTable
           rows={f.professional}
@@ -357,14 +361,8 @@ function SectionProfessional({ f, setF }: { f: FormState; setF: React.Dispatch<R
           ]}
         />
       </div>
-    </div>
-  );
-}
 
-function SectionPromotions({ f, setF }: { f: FormState; setF: React.Dispatch<React.SetStateAction<FormState>> }) {
-  const upd = (key: keyof FormState) => (v: string) => setF(p => ({ ...p, [key]: v }));
-  return (
-    <div style={{ paddingBottom: 80 }}>
+      <div className="section-title">Promotions</div>
       <div className="form-card">
         <DynTable
           rows={f.promotions}
@@ -377,6 +375,7 @@ function SectionPromotions({ f, setF }: { f: FormState; setF: React.Dispatch<Rea
           ]}
         />
       </div>
+
       <div className="section-title">Present Station &amp; Salary</div>
       <div className="form-card">
         <div className="form-row cols-1">
@@ -924,15 +923,14 @@ export default function TeacherForm() {
     );
   }
 
-  if (section === 7) {
+  if (section === 6) {
     return <Summary f={form} onReset={() => { setForm(initForm()); setSection(0); setEditSubmissionId(null); setFiles(DOCUMENTS.map(() => [])); }} />;
   }
 
   const sectionComponents = [
     <SectionPersonal f={form} setF={setForm} dynamicCircuits={dynamicCircuits} getSchoolsForCircuit={getSchoolsForCircuit} errors={errors} />,
-    <SectionAcademic f={form} setF={setForm} />,
-    <SectionProfessional f={form} setF={setForm} />,
-    <SectionPromotions f={form} setF={setForm} />,
+    <SectionFamilyLang f={form} setF={setForm} />,
+    <SectionQualifications f={form} setF={setForm} />,
     <SectionEmployment f={form} setF={setForm} />,
     <SectionNameSig f={form} setF={setForm} />,
   ];
@@ -1015,7 +1013,7 @@ export default function TeacherForm() {
         )}
 
         {/* Dynamic section rendering */}
-        {section < 6 ? sectionComponents[section] : (
+        {section < 5 ? sectionComponents[section] : (
           <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
               <FileText size={16} color="#002147" />
@@ -1051,16 +1049,16 @@ export default function TeacherForm() {
         <button
           className="btn-next"
           onClick={() => {
-            if (section < 6) {
+            if (section < 5) {
               handleProceedNext();
             } else {
               handleSubmit();
             }
           }}
-          disabled={section === 6 && (!allUploaded || submitting)}
-          style={{ opacity: (section === 6 && (!allUploaded || submitting)) ? 0.6 : 1 }}
+          disabled={section === 5 && (!allUploaded || submitting)}
+          style={{ opacity: (section === 5 && (!allUploaded || submitting)) ? 0.6 : 1 }}
         >
-          {section < 6 ? 'Next →' : (submitting ? submittingText : 'Submit Record')}
+          {section < 5 ? 'Next →' : (submitting ? submittingText : 'Submit Record')}
         </button>
       </div>
       <Footer theme="light" />
