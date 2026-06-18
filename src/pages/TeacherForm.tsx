@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { CheckCircle, User, FileText, Upload, X, LogOut, ShieldAlert } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 import jsPDF from 'jspdf';
-import { collection, updateDoc, doc, setDoc, serverTimestamp, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, setDoc, serverTimestamp, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import ImageCropperModal from '../components/ImageCropperModal';
