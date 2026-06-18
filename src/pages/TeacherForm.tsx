@@ -73,14 +73,14 @@ const initForm = (): FormState => ({
   maritalStatus: '', spouseName: '', spouseTel: '',
   lang1: '', lang2: '', lang3: '',
   subject: 'English',
-  children: [{ nameAndDob: '' }, { nameAndDob: '' }, { nameAndDob: '' }, { nameAndDob: '' }, { nameAndDob: '' }, { nameAndDob: '' }],
+  children: [{ nameAndDob: '' }],
   photoUrl: '',
-  academic: Array(6).fill(null).map(() => ({ level: '', subjects: '', year: '' })),
-  professional: Array(6).fill(null).map(() => ({ course: '', institution: '', from: '', to: '', award: '' })),
-  promotions: Array(6).fill(null).map(() => ({ kind: '', effectiveDate: '', salary: '', point: '' })),
+  academic: [{ level: '', subjects: '', year: '' }],
+  professional: [{ course: '', institution: '', from: '', to: '', award: '' }],
+  promotions: [{ kind: '', effectiveDate: '', salary: '', point: '' }],
   presentStation: '', salaryLevel: '', salaryStep: '',
   nameChanges: [{ former: '', dateChange: '', authority: '' }],
-  employment: Array(16).fill(null).map(() => ({ particulars: '', from: '', to: '', remarks: '' })),
+  employment: [{ particulars: '', from: '', to: '', remarks: '' }],
 });
 
 const SECTIONS = [
@@ -259,12 +259,24 @@ function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, error
       <div className="section-title">Names &amp; Dates of Birth of Children</div>
       <div className="form-card">
         {f.children.map((c: any, i: number) => (
-          <div key={i} className="form-row cols-1" style={{ marginBottom: 8 }}>
-            <Field label={`Child ${i + 1} (Name & Date of Birth)`}>
-              <Inp value={c.nameAndDob} onChange={v => updChild(i, v)} placeholder="Name, DD/MM/YYYY" />
-            </Field>
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <div style={{ flex: 1 }}>
+              <Field label={`Child ${i + 1} (Name & Date of Birth)`}>
+                <Inp value={c.nameAndDob} onChange={v => updChild(i, v)} placeholder="Name, DD/MM/YYYY" />
+              </Field>
+            </div>
+            {f.children.length > 1 && (
+              <button
+                onClick={() => setF((p: FormState) => ({ ...p, children: p.children.filter((_: any, j: number) => j !== i) }))}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', fontSize: 20, paddingTop: 18, flexShrink: 0 }}
+              >×</button>
+            )}
           </div>
         ))}
+        <button
+          className="add-row-btn"
+          onClick={() => setF((p: FormState) => ({ ...p, children: [...p.children, { nameAndDob: '' }] }))}
+        >+ Add Child</button>
       </div>
     </div>
   );
