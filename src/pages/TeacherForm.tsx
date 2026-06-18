@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { CheckCircle, User, FileText, Upload, X, LogOut, ShieldAlert } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 import jsPDF from 'jspdf';
-import { collection, addDoc, updateDoc, doc, serverTimestamp, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, updateDoc, doc, setDoc, serverTimestamp, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import ImageCropperModal from '../components/ImageCropperModal';
@@ -743,28 +743,21 @@ export default function TeacherForm() {
     if (currentRole !== 'teacher' && currentRole !== 'metro_officer') return;
     
     const interval = setInterval(async () => {
-      // Don't auto save if empty or currently submitting
-      if (!form.firstName && !form.surname && !form.teacherName) return;
+      // Don't auto save if staffId is missing, empty, or currently submitting
+      if (!form.staffId || form.staffId.trim() === '') return;
       if (submitting) return;
 
       try {
-        if (editSubmissionId) {
-          await updateDoc(doc(db, 'submissions', editSubmissionId), {
-            ...form,
-            status: form.status || 'draft',
-            updatedAt: serverTimestamp(),
-          });
-        } else {
-          const docRef = await addDoc(collection(db, 'submissions'), {
-            ...form,
-            status: 'draft',
-            submittedBy: user?.uid ?? '',
-            submittedByEmail: user?.email ?? '',
-            createdAt: serverTimestamp(),
-          });
-          setEditSubmissionId(docRef.id);
-          setForm(f => ({ ...f, status: 'draft' }));
-        }
+        const docId = form.staffId.trim();
+        await setDoc(doc(db, 'submissions', docId), {
+          ...form,
+          status: form.status || 'draft',
+          submittedBy: user?.uid ?? '',
+          submittedByEmail: user?.email ?? '',
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+        // Keep editSubmissionId in sync so handleSubmit uses the same docId
+        if (editSubmissionId !== docId) setEditSubmissionId(docId);
       } catch (err) {
         console.error('Auto-save error:', err);
       }
@@ -775,6 +768,7 @@ export default function TeacherForm() {
 
   const validatePersonal = () => {
     const e: Partial<FormState> = {};
+    if (!form.staffId || form.staffId.trim() === '') e.staffId = 'Required';
     if (form.category === 'School') {
       if (!form.circuit) e.circuit = 'Required';
       if (!form.school) e.school = 'Required';
@@ -954,24 +948,18 @@ export default function TeacherForm() {
 
       setSubmittingText('Saving to database...');
 
-      // Save to Firestore
-      if (editSubmissionId) {
-        await updateDoc(doc(db, 'submissions', editSubmissionId), {
-          ...form,
-          status: 'submitted',
-          documents: uploadedFiles,
-          updatedAt: serverTimestamp(),
-        });
-      } else {
-        await addDoc(collection(db, 'submissions'), {
-          ...form,
-          status: 'submitted',
-          documents: uploadedFiles,
-          submittedBy: user?.uid ?? '',
-          submittedByEmail: user?.email ?? '',
-          submittedAt: serverTimestamp(),
-        });
-      }
+      // Use staffId as the Firestore document ID (primary key)
+      const docId = form.staffId.trim();
+      await setDoc(doc(db, 'submissions', docId), {
+        ...form,
+        status: 'submitted',
+        documents: uploadedFiles,
+        submittedBy: user?.uid ?? '',
+        submittedByEmail: user?.email ?? '',
+        submittedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      setEditSubmissionId(docId);
 
       setSubmitting(false);
       setSection(6); // Move to Success/Summary section

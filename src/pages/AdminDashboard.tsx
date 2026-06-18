@@ -137,7 +137,10 @@ export default function AdminDashboard() {
 
   // Submissions Filtering logic
   const filteredSubmissions = submissions.filter((sub: any) => {
-    const matchesSearch = sub.teacherName?.toLowerCase().includes(searchTerm.toLowerCase()) || false;
+    const matchesSearch = 
+      sub.teacherName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      sub.staffId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      false;
     const matchesCategory = filterCategory ? sub.category === filterCategory : true;
     const matchesCircuit = filterCircuit ? sub.circuit === filterCircuit : true;
     const matchesSubject = filterSubject ? sub.subject === filterSubject : true;
@@ -591,6 +594,7 @@ export default function AdminDashboard() {
                     <thead>
                       <tr style={{ backgroundColor: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
                         <th style={{ padding: '16px 24px', color: '#4B5563', fontWeight: '600' }}>Teacher Name</th>
+                         <th style={{ padding: '16px 12px', color: '#4B5563', fontWeight: '600' }}>Staff ID</th>
                         <th style={{ padding: '16px 24px', color: '#4B5563', fontWeight: '600' }}>Category</th>
                         <th style={{ padding: '16px 24px', color: '#4B5563', fontWeight: '600' }}>Location details</th>
                         <th style={{ padding: '16px 24px', color: '#4B5563', fontWeight: '600' }}>Subject</th>
@@ -605,6 +609,11 @@ export default function AdminDashboard() {
                           <td style={{ padding: '16px 24px', fontWeight: '600', color: '#002147' }}>
                             {sub.teacherName}
                             {sub.sex && <span style={{ fontSize: '11px', color: '#6B7280', fontWeight: '500', marginLeft: '6px' }}>({sub.sex})</span>}
+                          </td>
+                          <td style={{ padding: '16px 12px' }}>
+                            <span style={{ fontSize: '12px', fontWeight: '700', color: '#002147', backgroundColor: '#E8EFF7', padding: '3px 8px', borderRadius: '4px', fontFamily: 'monospace' }}>
+                              {sub.staffId || <span style={{ color: '#9CA3AF', fontStyle: 'italic', fontFamily: 'system-ui' }}>N/A</span>}
+                            </span>
                           </td>
                           <td style={{ padding: '16px 24px' }}>
                             <span style={{ fontSize: '12px', padding: '2px 8px', borderRadius: '4px', fontWeight: '600', backgroundColor: sub.category === 'School' ? '#E0F2FE' : '#FEF3C7', color: sub.category === 'School' ? '#0369A1' : '#B45309' }}>
