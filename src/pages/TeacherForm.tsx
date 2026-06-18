@@ -14,7 +14,7 @@ interface ProfRow { course: string; institution: string; from: string; to: strin
 interface PromoRow { kind: string; effectiveDate: string; salary: string; point: string; [key: string]: string; }
 interface EmployRow { particulars: string; from: string; to: string; remarks: string; [key: string]: string; }
 interface NameRow { former: string; dateChange: string; authority: string; [key: string]: string; }
-interface Child { nameAndDob: string; }
+interface Child { name: string; dob: string; }
 
 const SUBJECTS = [
   'English', 'Mathematics', 'Science', 'Social Studies', 'ICT', 'French',
@@ -30,6 +30,7 @@ const DOCUMENTS = [
 ];
 
 interface FormState {
+  status: 'draft' | 'submitted';
   // Original Routing Data
   category: string; circuit: string; school: string;
   // Personal
@@ -62,6 +63,7 @@ interface FormState {
 }
 
 const initForm = (): FormState => ({
+  status: 'draft',
   category: '', circuit: '', school: '',
   firstName: '', otherNames: '', surname: '', teacherName: '',
   designation: '', sex: '', regNo: '', staffId: '',
@@ -73,7 +75,7 @@ const initForm = (): FormState => ({
   maritalStatus: '', spouseName: '', spouseTel: '',
   lang1: '', lang2: '', lang3: '',
   subject: 'English',
-  children: [{ nameAndDob: '' }],
+  children: [{ name: '', dob: '' }],
   photoUrl: '',
   academic: [{ level: '', subjects: '', year: '' }],
   professional: [{ course: '', institution: '', from: '', to: '', award: '' }],
@@ -90,6 +92,7 @@ const SECTIONS = [
   'Employment / Posting History',
   'Name Change & Signature',
   'Document Scans',
+  'Preview Record',
 ];
 
 interface ExistingFile {
@@ -129,7 +132,9 @@ function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, error
   // Custom updater that also auto-populates teacherName
   const upd = (key: keyof FormState) => (v: string) => {
     setF((p: FormState) => {
-      const next = { ...p, [key]: v };
+      // Force all data to uppercase, except email
+      const upperValue = (key === 'email' || key === 'photoUrl') ? v : v.toUpperCase();
+      const next = { ...p, [key]: upperValue };
       // Auto-combine names to preserve Admin DB structure
       if (key === 'firstName' || key === 'otherNames' || key === 'surname') {
         next.teacherName = `${next.firstName || ''} ${next.otherNames || ''} ${next.surname || ''}`.trim();
@@ -232,8 +237,8 @@ function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, error
 }
 
 function SectionFamilyLang({ f, setF }: { f: FormState; setF: React.Dispatch<React.SetStateAction<FormState>> }) {
-  const upd = (key: keyof FormState) => (v: string) => setF(p => ({ ...p, [key]: v }));
-  const updChild = (i: number, v: string) => setF((p: FormState) => { const c = [...p.children]; c[i] = { nameAndDob: v }; return { ...p, children: c }; });
+  const upd = (key: keyof FormState) => (v: string) => setF(p => ({ ...p, [key]: v.toUpperCase() }));
+  const updChild = (i: number, key: keyof Child, v: string) => setF((p: FormState) => { const c = [...p.children]; c[i] = { ...c[i], [key]: v }; return { ...p, children: c }; });
   return (
     <div style={{ paddingBottom: 80 }}>
       <div className="section-title">Next of Kin</div>
@@ -267,9 +272,12 @@ function SectionFamilyLang({ f, setF }: { f: FormState; setF: React.Dispatch<Rea
       <div className="form-card">
         {f.children.map((c: any, i: number) => (
           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-            <div style={{ flex: 1 }}>
-              <Field label={`Child ${i + 1} (Name & Date of Birth)`}>
-                <Inp value={c.nameAndDob} onChange={v => updChild(i, v)} placeholder="Name, DD/MM/YYYY" />
+            <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 120px', gap: 8 }}>
+              <Field label={`Child ${i + 1} Name`}>
+                <Inp value={c.name} onChange={v => updChild(i, 'name', v.toUpperCase())} placeholder="Full Name" />
+              </Field>
+              <Field label="Date of Birth">
+                <Inp value={c.dob} onChange={v => updChild(i, 'dob', v)} type="date" />
               </Field>
             </div>
             {f.children.length > 1 && (
@@ -282,7 +290,7 @@ function SectionFamilyLang({ f, setF }: { f: FormState; setF: React.Dispatch<Rea
         ))}
         <button
           className="add-row-btn"
-          onClick={() => setF((p: FormState) => ({ ...p, children: [...p.children, { nameAndDob: '' }] }))}
+          onClick={() => setF((p: FormState) => ({ ...p, children: [...p.children, { name: '', dob: '' }] }))}
         >+ Add Child</button>
       </div>
     </div>
@@ -314,7 +322,9 @@ function DynTable<T extends Record<string, string>>({
                   <td key={String(c.key)}>
                     <input value={row[c.key] as string} onChange={e => {
                       const updated = [...rows];
-                      updated[i] = { ...updated[i], [c.key]: e.target.value };
+                      // Also force uppercase in dynamic tables unless it's a date field (like 'from', 'to', 'effectiveDate')
+                      const isDate = c.key === 'from' || c.key === 'to' || c.key === 'effectiveDate' || c.key === 'dateChange' || c.key === 'award';
+                      updated[i] = { ...updated[i], [c.key]: isDate ? e.target.value : e.target.value.toUpperCase() };
                       setRows(updated);
                     }} />
                   </td>
@@ -448,7 +458,7 @@ function SectionNameSig({ f, setF }: { f: FormState; setF: React.Dispatch<React.
   );
 }
 
-function Summary({ f, onReset }: { f: FormState; onReset: () => void }) {
+function Summary({ f, onReset, isPreview = false }: { f: FormState; onReset?: () => void; isPreview?: boolean }) {
   const row = (label: string, val: string) => val ? (
     <div className="summary-item">
       <span className="summary-key">{label}</span>
@@ -457,16 +467,20 @@ function Summary({ f, onReset }: { f: FormState; onReset: () => void }) {
   ) : null;
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f0f4f8', paddingBottom: 90, maxWidth: 600, margin: '0 auto' }}>
-      <div className="ges-header">
-        <h1>Ghana Education Service</h1>
-        <h2>Tema Metropolitan Directorate of Education</h2>
-      </div>
-      <div style={{ padding: '14px 12px 4px', textAlign: 'center' }}>
-        <div style={{ fontSize: 32 }}>✅</div>
-        <h2 style={{ color: '#002147', margin: '6px 0 4px', fontSize: 17 }}>Record Submitted Successfully</h2>
-        <p style={{ fontSize: 12, color: '#6b7280', margin: 0 }}>Personal Record of Members of the GES</p>
-      </div>
+    <div style={{ minHeight: '100vh', background: isPreview ? 'transparent' : '#f0f4f8', paddingBottom: 90, maxWidth: 600, margin: '0 auto' }}>
+      {!isPreview && (
+        <>
+          <div className="ges-header">
+            <h1>Ghana Education Service</h1>
+            <h2>Tema Metropolitan Directorate of Education</h2>
+          </div>
+          <div style={{ padding: '14px 12px 4px', textAlign: 'center' }}>
+            <div style={{ fontSize: 32 }}>✅</div>
+            <h2 style={{ color: '#002147', margin: '6px 0 4px', fontSize: 17 }}>Record Submitted Successfully</h2>
+            <p style={{ fontSize: 12, color: '#6b7280', margin: 0 }}>Personal Record of Members of the GES</p>
+          </div>
+        </>
+      )}
 
       {f.photoUrl && (
         <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0' }}>
@@ -489,6 +503,18 @@ function Summary({ f, onReset }: { f: FormState; onReset: () => void }) {
           {section.map(([k, v]) => row(k, v))}
         </div>
       ))}
+
+      {f.children && f.children.some(c => c.name || (c as any).nameAndDob) && (
+        <div className="form-card">
+          <div style={{ fontWeight: 700, color: '#002147', fontSize: 12, marginBottom: 8, textTransform: 'uppercase' }}>Children</div>
+          {f.children.filter(c => c.name || (c as any).nameAndDob).map((c, i) => (
+            <div key={i} className="summary-item">
+              <span className="summary-key">Child {i + 1}</span>
+              <span className="summary-val">{c.name ? `${c.name} (DOB: ${c.dob})` : (c as any).nameAndDob}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {f.academic.some(r => r.level) && (
         <div className="form-card">
@@ -514,6 +540,18 @@ function Summary({ f, onReset }: { f: FormState; onReset: () => void }) {
         </div>
       )}
 
+      {f.promotions.some(r => r.kind) && (
+        <div className="form-card">
+          <div style={{ fontWeight: 700, color: '#002147', fontSize: 12, marginBottom: 8, textTransform: 'uppercase' }}>Promotions</div>
+          {f.promotions.filter(r => r.kind).map((r, i) => (
+            <div key={i} className="summary-item">
+              <span className="summary-key">{r.kind}</span>
+              <span className="summary-val">{r.effectiveDate} (Scale: {r.salary}, Point: {r.point})</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {f.employment.some(r => r.particulars) && (
         <div className="form-card">
           <div style={{ fontWeight: 700, color: '#002147', fontSize: 12, marginBottom: 8, textTransform: 'uppercase' }}>Employment History</div>
@@ -526,9 +564,23 @@ function Summary({ f, onReset }: { f: FormState; onReset: () => void }) {
         </div>
       )}
 
-      <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 600, background: 'white', borderTop: '1px solid #e5e7eb', padding: '12px 16px' }}>
-        <button onClick={onReset} style={{ width: '100%', padding: 12, background: '#002147', color: 'white', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>Start New Record</button>
-      </div>
+      {f.nameChanges && f.nameChanges.some(r => r.former) && (
+        <div className="form-card">
+          <div style={{ fontWeight: 700, color: '#002147', fontSize: 12, marginBottom: 8, textTransform: 'uppercase' }}>Name Changes</div>
+          {f.nameChanges.filter(r => r.former).map((r, i) => (
+            <div key={i} className="summary-item">
+              <span className="summary-key">{r.former}</span>
+              <span className="summary-val">{r.dateChange} (Auth: {r.authority})</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!isPreview && onReset && (
+        <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 600, background: 'white', borderTop: '1px solid #e5e7eb', padding: '12px 16px' }}>
+          <button onClick={onReset} style={{ width: '100%', padding: 12, background: '#002147', color: 'white', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>Start New Record</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -685,6 +737,41 @@ export default function TeacherForm() {
       setForm(f => ({ ...f, category: 'Education Office' }));
     }
   }, [currentRole]);
+
+  // Auto-Save Effect (Every 10 seconds)
+  useEffect(() => {
+    if (currentRole !== 'teacher' && currentRole !== 'metro_officer') return;
+    
+    const interval = setInterval(async () => {
+      // Don't auto save if empty or currently submitting
+      if (!form.firstName && !form.surname && !form.teacherName) return;
+      if (submitting) return;
+
+      try {
+        if (editSubmissionId) {
+          await updateDoc(doc(db, 'submissions', editSubmissionId), {
+            ...form,
+            status: form.status || 'draft',
+            updatedAt: serverTimestamp(),
+          });
+        } else {
+          const docRef = await addDoc(collection(db, 'submissions'), {
+            ...form,
+            status: 'draft',
+            submittedBy: user?.uid ?? '',
+            submittedByEmail: user?.email ?? '',
+            createdAt: serverTimestamp(),
+          });
+          setEditSubmissionId(docRef.id);
+          setForm(f => ({ ...f, status: 'draft' }));
+        }
+      } catch (err) {
+        console.error('Auto-save error:', err);
+      }
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [form, editSubmissionId, currentRole, submitting, user]);
 
   const validatePersonal = () => {
     const e: Partial<FormState> = {};
@@ -871,12 +958,14 @@ export default function TeacherForm() {
       if (editSubmissionId) {
         await updateDoc(doc(db, 'submissions', editSubmissionId), {
           ...form,
+          status: 'submitted',
           documents: uploadedFiles,
           updatedAt: serverTimestamp(),
         });
       } else {
         await addDoc(collection(db, 'submissions'), {
           ...form,
+          status: 'submitted',
           documents: uploadedFiles,
           submittedBy: user?.uid ?? '',
           submittedByEmail: user?.email ?? '',
@@ -885,7 +974,7 @@ export default function TeacherForm() {
       }
 
       setSubmitting(false);
-      setSection(7); // Move to Success/Summary section
+      setSection(6); // Move to Success/Summary section
     } catch (error: any) {
       console.error('Error submitting form:', error);
       if (error.message === 'MISSING_CLOUDINARY_CONFIG') {
@@ -923,7 +1012,7 @@ export default function TeacherForm() {
     );
   }
 
-  if (section === 6) {
+  if (section === 7) {
     return <Summary f={form} onReset={() => { setForm(initForm()); setSection(0); setEditSubmissionId(null); setFiles(DOCUMENTS.map(() => [])); }} />;
   }
 
@@ -1013,7 +1102,7 @@ export default function TeacherForm() {
         )}
 
         {/* Dynamic section rendering */}
-        {section < 5 ? sectionComponents[section] : (
+        {section < 5 ? sectionComponents[section] : section === 5 ? (
           <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
               <FileText size={16} color="#002147" />
@@ -1033,6 +1122,17 @@ export default function TeacherForm() {
               </span>
             </div>
           </div>
+        ) : (
+          <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+              <CheckCircle size={18} color="#002147" />
+              <span style={{ fontSize: '15px', fontWeight: '700', color: '#111827' }}>Preview Before Submission</span>
+            </div>
+            <p style={{ fontSize: '13px', color: '#6B7280', marginBottom: '16px' }}>
+              Please review all your details below. If anything is incorrect, use the Back button to make corrections before final submission.
+            </p>
+            <Summary f={form} isPreview={true} />
+          </div>
         )}
       </div>
 
@@ -1049,16 +1149,16 @@ export default function TeacherForm() {
         <button
           className="btn-next"
           onClick={() => {
-            if (section < 5) {
+            if (section < 6) {
               handleProceedNext();
             } else {
               handleSubmit();
             }
           }}
-          disabled={section === 5 && (!allUploaded || submitting)}
-          style={{ opacity: (section === 5 && (!allUploaded || submitting)) ? 0.6 : 1 }}
+          disabled={(section === 5 && !allUploaded) || submitting}
+          style={{ opacity: ((section === 5 && !allUploaded) || submitting) ? 0.6 : 1 }}
         >
-          {section < 5 ? 'Next →' : (submitting ? submittingText : 'Submit Record')}
+          {section < 6 ? 'Next →' : (submitting ? submittingText : 'Submit Record')}
         </button>
       </div>
       <Footer theme="light" />

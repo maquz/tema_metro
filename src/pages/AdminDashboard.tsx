@@ -157,7 +157,10 @@ export default function AdminDashboard() {
       }
     }
     
-    return matchesSearch && matchesCategory && matchesCircuit && matchesSubject && matchesDate;
+    // Ignore drafts (old submissions won't have a status, which is fine)
+    const isDraft = sub.status === 'draft';
+    
+    return !isDraft && matchesSearch && matchesCategory && matchesCircuit && matchesSubject && matchesDate;
   });
 
   const handleExportCSV = () => {
