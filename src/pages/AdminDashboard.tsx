@@ -183,6 +183,7 @@ export default function AdminDashboard() {
         'Subject': sub.subject || 'N/A',
         'Submitted At': formatTimestamp(sub.submittedAt),
         'Submitted By Email': sub.submittedByEmail || 'N/A',
+        'Teachers Licence No.': sub.teachersLicence || 'N/A',
         ...docUrls
       };
     });
@@ -1107,7 +1108,7 @@ export default function AdminDashboard() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
               {/* KPI Cards */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
-                {kpiCard(<TrendingUp size={22} />, 'Total Submissions', totalSubmissions, '#002147', 'all time')}
+                {kpiCard(<TrendingUp size={22} />, 'Total Staff Updated', totalSubmissions, '#002147', 'all time')}
                 {kpiCard(<FileText size={22} />, 'School Records', schoolSubs, '#0369A1', `${totalSubmissions ? Math.round(schoolSubs / totalSubmissions * 100) : 0}% of total`)}
                 {kpiCard(<Building2 size={22} />, 'Education Office', officeSubs, '#B45309', `${totalSubmissions ? Math.round(officeSubs / totalSubmissions * 100) : 0}% of total`)}
                 {kpiCard(<Users size={22} />, 'Registered Users', totalUsers, '#065F46', `${activeUsersCount} currently online`)}

@@ -39,7 +39,7 @@ interface FormState {
   designation: string; sex: string; regNo: string; staffId: string;
   dob: string; nationality: string; hometown: string;
   address: string; mobile: string; email: string; ssfNo: string;
-  niaNo: string; drivingLicence: string;
+  niaNo: string; drivingLicence: string; teachersLicence: string;
   firstAppointment: string; dateConfirmed: string;
   nextOfKin: string; nokTel: string; nokRelationship: string;
   maritalStatus: string; spouseName: string; spouseTel: string;
@@ -69,7 +69,7 @@ const initForm = (): FormState => ({
   designation: '', sex: '', regNo: '', staffId: '',
   dob: '', nationality: '', hometown: '',
   address: '', mobile: '', email: '', ssfNo: '',
-  niaNo: '', drivingLicence: '',
+  niaNo: '', drivingLicence: '', teachersLicence: '',
   firstAppointment: '', dateConfirmed: '',
   nextOfKin: '', nokTel: '', nokRelationship: '',
   maritalStatus: '', spouseName: '', spouseTel: '',
@@ -118,9 +118,9 @@ function Inp({ value, onChange, placeholder, type = 'text', disabled = false }: 
 }
 function Sel({ value, onChange, options, disabled = false }: { value: string; onChange: (v: string) => void; options: string[]; disabled?: boolean }) {
   return (
-    <select className="field-input" disabled={disabled} value={value} onChange={e => onChange(e.target.value)} style={disabled ? { backgroundColor: '#F9FAFB', cursor: 'not-allowed' } : {}}>
+    <select className="field-input" disabled={disabled} value={value?.toUpperCase() || ''} onChange={e => onChange(e.target.value)} style={disabled ? { backgroundColor: '#F9FAFB', cursor: 'not-allowed' } : {}}>
       <option value="">Select…</option>
-      {options.map(o => <option key={o} value={o}>{o}</option>)}
+      {options.map(o => <option key={o} value={o.toUpperCase()}>{o.toUpperCase()}</option>)}
     </select>
   );
 }
@@ -223,8 +223,9 @@ function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, error
           <Field label="SSF No."><Inp value={f.ssfNo} onChange={upd('ssfNo')} placeholder="SSF No." /></Field>
           <Field label="NIA No."><Inp value={f.niaNo} onChange={upd('niaNo')} placeholder="NIA No." /></Field>
         </div>
-        <div className="form-row cols-1">
+        <div className="form-row cols-2">
           <Field label="Driving Licence No."><Inp value={f.drivingLicence} onChange={upd('drivingLicence')} placeholder="Driving Licence No." /></Field>
+          <Field label="Teachers Licence No."><Inp value={f.teachersLicence} onChange={upd('teachersLicence')} placeholder="Teachers Licence No." /></Field>
         </div>
         <div className="form-row cols-2">
           <Field label="Date of First Appointment"><Inp value={f.firstAppointment} onChange={upd('firstAppointment')} type="date" /></Field>
@@ -494,6 +495,7 @@ function Summary({ f, onReset, isPreview = false }: { f: FormState; onReset?: ()
         ['Date of Birth', f.dob], ['Nationality', f.nationality], ['Home Town', f.hometown],
         ['Address', f.address], ['Mobile', f.mobile], ['Email', f.email],
         ['SSF No.', f.ssfNo], ['NIA No.', f.niaNo],
+        ['Driving Licence', f.drivingLicence], ['Teachers Licence', f.teachersLicence],
         ['First Appointment', f.firstAppointment], ['Date Confirmed', f.dateConfirmed],
         ['Marital Status', f.maritalStatus], ['Spouse', f.spouseName],
         ['Next of Kin', f.nextOfKin], ['Languages', [f.lang1, f.lang2, f.lang3].filter(Boolean).join(', ')],
