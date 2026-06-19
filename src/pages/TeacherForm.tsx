@@ -759,12 +759,13 @@ export default function TeacherForm() {
             updatedAt: serverTimestamp(),
           });
         } else {
-          // Look for existing record by staffId
-          const q = query(collection(db, 'submissions'), where('staffId', '==', form.staffId.trim()));
+          // Look for existing record by staffId within user's own submissions to satisfy security rules
+          const q = query(collection(db, 'submissions'), where('submittedBy', '==', user?.uid ?? ''));
           const snap = await getDocs(q);
-          if (!snap.empty) {
+          const existingDoc = snap.docs.find(d => d.data().staffId === form.staffId.trim());
+          if (existingDoc) {
             // Update existing record
-            const existingId = snap.docs[0].id;
+            const existingId = existingDoc.id;
             await updateDoc(doc(db, 'submissions', existingId), {
               ...form,
               status: form.status || 'draft',
@@ -983,11 +984,12 @@ export default function TeacherForm() {
           updatedAt: serverTimestamp(),
         });
       } else {
-        // Check if a record with this staffId already exists
-        const q = query(collection(db, 'submissions'), where('staffId', '==', form.staffId.trim()));
+        // Check if a record with this staffId already exists within user's own submissions
+        const q = query(collection(db, 'submissions'), where('submittedBy', '==', user?.uid ?? ''));
         const snap = await getDocs(q);
-        if (!snap.empty) {
-          const existingId = snap.docs[0].id;
+        const existingDoc = snap.docs.find(d => d.data().staffId === form.staffId.trim());
+        if (existingDoc) {
+          const existingId = existingDoc.id;
           await updateDoc(doc(db, 'submissions', existingId), {
             ...form,
             status: 'submitted',
