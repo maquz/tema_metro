@@ -978,13 +978,14 @@ export default function TeacherForm() {
           : `ges-tema/${form.circuit}/${form.school}/${form.teacherName}`;
         formData.append('folder', folderPath);
 
-        const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`, {
+        const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/raw/upload`, {
           method: 'POST',
           body: formData,
         });
 
         if (!response.ok) {
-          throw new Error(`Cloudinary upload failed for ${newFilename}`);
+          const errText = await response.text();
+          throw new Error(`Cloudinary upload failed for ${newFilename}. Reason: ${errText}`);
         }
 
         const data = await response.json();
