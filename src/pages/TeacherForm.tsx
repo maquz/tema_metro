@@ -890,8 +890,8 @@ export default function TeacherForm() {
       };
 
       // Cloudinary config — hoisted so both the doc loop and photo upload can use it
-      const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
-      const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
+      const cloudName = (import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || '').trim();
+      const uploadPreset = (import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || '').trim();
       if (!cloudName || !uploadPreset || cloudName === 'your_cloudinary_cloud_name') {
         throw new Error('MISSING_CLOUDINARY_CONFIG');
       }
