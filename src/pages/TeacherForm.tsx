@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { CheckCircle, User, FileText, Upload, X, LogOut, ShieldAlert } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 import jsPDF from 'jspdf';
-import { collection, doc, setDoc, serverTimestamp, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, getDocs, doc, serverTimestamp, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import ImageCropperModal from '../components/ImageCropperModal';
@@ -748,16 +748,40 @@ export default function TeacherForm() {
       if (submitting) return;
 
       try {
-        const docId = form.staffId.trim();
-        await setDoc(doc(db, 'submissions', docId), {
-          ...form,
-          status: form.status || 'draft',
-          submittedBy: user?.uid ?? '',
-          submittedByEmail: user?.email ?? '',
-          updatedAt: serverTimestamp(),
-        }, { merge: true });
-        // Keep editSubmissionId in sync so handleSubmit uses the same docId
-        if (editSubmissionId !== docId) setEditSubmissionId(docId);
+        // Check if a document with this staffId already exists
+        if (editSubmissionId) {
+          // We already know the document ID, just update it
+          await updateDoc(doc(db, 'submissions', editSubmissionId), {
+            ...form,
+            status: form.status || 'draft',
+            updatedAt: serverTimestamp(),
+          });
+        } else {
+          // Look for existing record by staffId
+          const q = query(collection(db, 'submissions'), where('staffId', '==', form.staffId.trim()));
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            // Update existing record
+            const existingId = snap.docs[0].id;
+            await updateDoc(doc(db, 'submissions', existingId), {
+              ...form,
+              status: form.status || 'draft',
+              updatedAt: serverTimestamp(),
+            });
+            setEditSubmissionId(existingId);
+          } else {
+            // Create new draft
+            const docRef = await addDoc(collection(db, 'submissions'), {
+              ...form,
+              status: 'draft',
+              submittedBy: user?.uid ?? '',
+              submittedByEmail: user?.email ?? '',
+              createdAt: serverTimestamp(),
+            });
+            setEditSubmissionId(docRef.id);
+            setForm(f => ({ ...f, status: 'draft' }));
+          }
+        }
       } catch (err) {
         console.error('Auto-save error:', err);
       }
@@ -948,21 +972,42 @@ export default function TeacherForm() {
 
       setSubmittingText('Saving to database...');
 
-      // Use staffId as the Firestore document ID (primary key)
-      const docId = form.staffId.trim();
-      await setDoc(doc(db, 'submissions', docId), {
-        ...form,
-        status: 'submitted',
-        documents: uploadedFiles,
-        submittedBy: user?.uid ?? '',
-        submittedByEmail: user?.email ?? '',
-        submittedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
-      setEditSubmissionId(docId);
+      // Save to Firestore using staffId as lookup key
+      if (editSubmissionId) {
+        await updateDoc(doc(db, 'submissions', editSubmissionId), {
+          ...form,
+          status: 'submitted',
+          documents: uploadedFiles,
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        // Check if a record with this staffId already exists
+        const q = query(collection(db, 'submissions'), where('staffId', '==', form.staffId.trim()));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const existingId = snap.docs[0].id;
+          await updateDoc(doc(db, 'submissions', existingId), {
+            ...form,
+            status: 'submitted',
+            documents: uploadedFiles,
+            updatedAt: serverTimestamp(),
+          });
+          setEditSubmissionId(existingId);
+        } else {
+          const docRef = await addDoc(collection(db, 'submissions'), {
+            ...form,
+            status: 'submitted',
+            documents: uploadedFiles,
+            submittedBy: user?.uid ?? '',
+            submittedByEmail: user?.email ?? '',
+            submittedAt: serverTimestamp(),
+          });
+          setEditSubmissionId(docRef.id);
+        }
+      }
 
       setSubmitting(false);
-      setSection(6); // Move to Success/Summary section
+      setSection(7); // Move to Success/Summary section
     } catch (error: any) {
       console.error('Error submitting form:', error);
       if (error.message === 'MISSING_CLOUDINARY_CONFIG') {
