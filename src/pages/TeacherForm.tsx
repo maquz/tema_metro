@@ -188,7 +188,25 @@ function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, error
               {f.photoUrl ? <img src={f.photoUrl} alt="passport" /> : <><span style={{ fontSize: 24 }}>📷</span><span>Tap to upload</span></>}
             </div>
             <input ref={photoRef} type="file" accept="image/*" style={{ display: 'none' }}
-              onChange={e => { const file = e.target.files?.[0]; if (file) { const r = new FileReader(); r.onload = ev => setF((p: FormState) => ({ ...p, photoUrl: ev.target?.result as string })); r.readAsDataURL(file); } }} />
+              onChange={e => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const img = new Image();
+                const url = URL.createObjectURL(file);
+                img.onload = () => {
+                  const MAX_W = 300; const MAX_H = 400;
+                  let w = img.width; let h = img.height;
+                  if (w > MAX_W) { h = Math.round(h * MAX_W / w); w = MAX_W; }
+                  if (h > MAX_H) { w = Math.round(w * MAX_H / h); h = MAX_H; }
+                  const canvas = document.createElement('canvas');
+                  canvas.width = w; canvas.height = h;
+                  canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
+                  const compressed = canvas.toDataURL('image/jpeg', 0.7);
+                  URL.revokeObjectURL(url);
+                  setF((p: FormState) => ({ ...p, photoUrl: compressed }));
+                };
+                img.src = url;
+              }} />
           </div>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
             <Field label="First Name" required><Inp value={f.firstName} onChange={upd('firstName')} placeholder="First name" /></Field>
@@ -753,8 +771,10 @@ export default function TeacherForm() {
         // Check if a document with this staffId already exists
         if (editSubmissionId) {
           // We already know the document ID, just update it
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { photoUrl: _photo, ...formWithoutPhoto } = form;
           await updateDoc(doc(db, 'submissions', editSubmissionId), {
-            ...form,
+            ...formWithoutPhoto,
             status: form.status || 'draft',
             updatedAt: serverTimestamp(),
           });
@@ -766,16 +786,20 @@ export default function TeacherForm() {
           if (existingDoc) {
             // Update existing record
             const existingId = existingDoc.id;
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { photoUrl: _photo, ...formWithoutPhoto } = form;
             await updateDoc(doc(db, 'submissions', existingId), {
-              ...form,
+              ...formWithoutPhoto,
               status: form.status || 'draft',
               updatedAt: serverTimestamp(),
             });
             setEditSubmissionId(existingId);
           } else {
             // Create new draft
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { photoUrl: _photo2, ...formWithoutPhoto } = form;
             const docRef = await addDoc(collection(db, 'submissions'), {
-              ...form,
+              ...formWithoutPhoto,
               status: 'draft',
               submittedBy: user?.uid ?? '',
               submittedByEmail: user?.email ?? '',
@@ -865,6 +889,13 @@ export default function TeacherForm() {
         return str.trim().replace(/[^a-zA-Z0-9-]/g, '_').replace(/_+/g, '_');
       };
 
+      // Cloudinary config — hoisted so both the doc loop and photo upload can use it
+      const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+      const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
+      if (!cloudName || !uploadPreset || cloudName === 'your_cloudinary_cloud_name') {
+        throw new Error('MISSING_CLOUDINARY_CONFIG');
+      }
+
       const uploadedFiles = [];
 
       for (let i = 0; i < flatFiles.length; i++) {
@@ -938,13 +969,6 @@ export default function TeacherForm() {
         const newFilename = `${paddedIndex}_${sanitizedTeacher}.${ext}`;
         const renamedFile = new File([fileToUpload], newFilename, { type: fileToUpload.type });
 
-        const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
-        const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
-        
-        if (!cloudName || !uploadPreset || cloudName === 'your_cloudinary_cloud_name') {
-          throw new Error('MISSING_CLOUDINARY_CONFIG');
-        }
-
         const formData = new FormData();
         formData.append('file', renamedFile, newFilename);
         formData.append('upload_preset', uploadPreset);
@@ -975,12 +999,58 @@ export default function TeacherForm() {
 
       setSubmittingText('Saving to database...');
 
+      // Upload passport photo to Cloudinary if it's a base64 string (not already a URL)
+      let passportPhotoUrl = '';
+      if (form.photoUrl && form.photoUrl.startsWith('data:')) {
+        try {
+          setSubmittingText('Uploading passport photo...');
+          // Convert base64 to blob
+          const byteString = atob(form.photoUrl.split(',')[1]);
+          const mimeType = form.photoUrl.split(',')[0].split(':')[1].split(';')[0];
+          const ab = new ArrayBuffer(byteString.length);
+          const ia = new Uint8Array(ab);
+          for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+          const photoBlob = new Blob([ab], { type: mimeType });
+          const photoFile = new File([photoBlob], `passport_${form.staffId || 'photo'}.jpg`, { type: 'image/jpeg' });
+
+          const photoFormData = new FormData();
+          photoFormData.append('file', photoFile);
+          photoFormData.append('upload_preset', uploadPreset);
+          const folderPath = form.category === 'Education Office'
+            ? `ges-tema/Education Office/${form.teacherName}/passport`
+            : `ges-tema/${form.circuit}/${form.school}/${form.teacherName}/passport`;
+          photoFormData.append('folder', folderPath);
+
+          const photoRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+            method: 'POST',
+            body: photoFormData,
+          });
+          if (photoRes.ok) {
+            const photoData = await photoRes.json();
+            passportPhotoUrl = photoData.secure_url;
+          }
+        } catch (photoErr) {
+          console.warn('Passport photo upload failed, continuing without it:', photoErr);
+        }
+      } else if (form.photoUrl && form.photoUrl.startsWith('http')) {
+        // Already a Cloudinary URL from a previous submission
+        passportPhotoUrl = form.photoUrl;
+      }
+
+      // Strip base64 photoUrl — never write large base64 strings to Firestore
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { photoUrl: _base64Photo, ...formWithoutPhoto } = form;
+      const firestorePayload = {
+        ...formWithoutPhoto,
+        photoUrl: passportPhotoUrl, // store only the Cloudinary URL (empty string if upload failed)
+        documents: uploadedFiles,
+      };
+
       // Save to Firestore using staffId as lookup key
       if (editSubmissionId) {
         await updateDoc(doc(db, 'submissions', editSubmissionId), {
-          ...form,
+          ...firestorePayload,
           status: 'submitted',
-          documents: uploadedFiles,
           updatedAt: serverTimestamp(),
         });
       } else {
@@ -991,17 +1061,15 @@ export default function TeacherForm() {
         if (existingDoc) {
           const existingId = existingDoc.id;
           await updateDoc(doc(db, 'submissions', existingId), {
-            ...form,
+            ...firestorePayload,
             status: 'submitted',
-            documents: uploadedFiles,
             updatedAt: serverTimestamp(),
           });
           setEditSubmissionId(existingId);
         } else {
           const docRef = await addDoc(collection(db, 'submissions'), {
-            ...form,
+            ...firestorePayload,
             status: 'submitted',
-            documents: uploadedFiles,
             submittedBy: user?.uid ?? '',
             submittedByEmail: user?.email ?? '',
             submittedAt: serverTimestamp(),
@@ -1009,6 +1077,7 @@ export default function TeacherForm() {
           setEditSubmissionId(docRef.id);
         }
       }
+
 
       setSubmitting(false);
       setSection(7); // Move to Success/Summary section
