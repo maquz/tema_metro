@@ -337,8 +337,10 @@ export default function AdminDashboard() {
         const sub = targetSubmissions[i];
         if (!sub.documents || sub.documents.length === 0) continue;
         
-        const folderName = `${sub.teacherName || 'Teacher'}_${sub.category === 'School' ? sub.school : 'Office'}`.replace(/[^a-zA-Z0-9- _]/g, '');
-        const teacherFolder = zip.folder(folderName);
+        const schoolFolder = sub.category === 'School' ? (sub.school || 'Unknown_School') : 'Education_Office';
+        const safeSchoolFolder = schoolFolder.replace(/[^a-zA-Z0-9- _]/g, '');
+        const safeTeacherName = `${sub.teacherName || 'Teacher'}`.replace(/[^a-zA-Z0-9- _]/g, '');
+        const teacherFolder = zip.folder(`${safeSchoolFolder}/${safeTeacherName}`);
         
         for (let idx = 0; idx < sub.documents.length; idx++) {
           const docItem = sub.documents[idx];
