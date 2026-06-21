@@ -304,15 +304,14 @@ export default function AdminDashboard() {
     setDownloadingId(null);
   };
 
-  const handleDownloadAllSubmissions = async () => {
-    if (filteredSubmissions.length === 0) {
+  const downloadZippedSubmissions = async (targetSubmissions: any[], zipFilename: string) => {
+    if (targetSubmissions.length === 0) {
       alert('No submissions available to download.');
       return;
     }
     
-    // Calculate total files to be downloaded
     let totalFiles = 0;
-    filteredSubmissions.forEach(sub => {
+    targetSubmissions.forEach(sub => {
       if (sub.documents && sub.documents.length > 0) {
         totalFiles += sub.documents.length;
       }
@@ -323,7 +322,7 @@ export default function AdminDashboard() {
       return;
     }
     
-    if (!window.confirm(`Are you sure you want to download ${filteredSubmissions.length} submissions containing a total of ${totalFiles} documents? This may take several minutes.`)) {
+    if (!window.confirm(`Are you sure you want to download ${targetSubmissions.length} submissions containing a total of ${totalFiles} documents? This may take several minutes.`)) {
       return;
     }
 
@@ -331,50 +330,37 @@ export default function AdminDashboard() {
     setBulkZipProgress({ current: 0, total: totalFiles, batch: 1, totalBatches: 1 });
     
     try {
-      const BATCH_SIZE = 10; // Zip 10 submissions at a time to prevent OOM crash
-      const totalBatches = Math.ceil(filteredSubmissions.length / BATCH_SIZE);
       let processedFiles = 0;
+      const zip = new JSZip();
 
-      for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
-        setBulkZipProgress(prev => prev ? { ...prev, batch: batchIdx + 1, totalBatches } : null);
+      for (let i = 0; i < targetSubmissions.length; i++) {
+        const sub = targetSubmissions[i];
+        if (!sub.documents || sub.documents.length === 0) continue;
         
-        const zip = new JSZip();
-        const startIdx = batchIdx * BATCH_SIZE;
-        const endIdx = Math.min(startIdx + BATCH_SIZE, filteredSubmissions.length);
-        const currentBatch = filteredSubmissions.slice(startIdx, endIdx);
+        const folderName = `${sub.teacherName || 'Teacher'}_${sub.category === 'School' ? sub.school : 'Office'}`.replace(/[^a-zA-Z0-9- _]/g, '');
+        const teacherFolder = zip.folder(folderName);
         
-        // Loop through current batch sequentially
-        for (let i = 0; i < currentBatch.length; i++) {
-          const sub = currentBatch[i];
-          if (!sub.documents || sub.documents.length === 0) continue;
-          
-          const folderName = `${sub.teacherName || 'Teacher'}_${sub.category === 'School' ? sub.school : 'Office'}`.replace(/[^a-zA-Z0-9- _]/g, '');
-          const teacherFolder = zip.folder(folderName);
-          
-          // Inside each folder, download that teacher's uploaded files sequentially
-          for (let idx = 0; idx < sub.documents.length; idx++) {
-            const docItem = sub.documents[idx];
-            try {
-              const response = await fetch(docItem.downloadURL);
-              if (!response.ok) throw new Error(`Failed to fetch ${docItem.fileName} (${response.status})`);
-              const blob = await response.blob();
-              const paddedIndex = String(idx + 1).padStart(2, '0');
-              const fileName = `${paddedIndex}_${sub.teacherName || 'file'}.pdf`.replace(/[^a-zA-Z0-9- _.]/g, '');
-              teacherFolder?.file(fileName, blob);
-            } catch (e) {
-              console.error('Error fetching document:', e);
-            } finally {
-              processedFiles++;
-              setBulkZipProgress(prev => prev ? { ...prev, current: processedFiles } : null);
-            }
+        for (let idx = 0; idx < sub.documents.length; idx++) {
+          const docItem = sub.documents[idx];
+          try {
+            const response = await fetch(docItem.downloadURL);
+            if (!response.ok) throw new Error(`Failed to fetch ${docItem.fileName} (${response.status})`);
+            const blob = await response.blob();
+            const paddedIndex = String(idx + 1).padStart(2, '0');
+            const fileName = `${paddedIndex}_${sub.teacherName || 'file'}.pdf`.replace(/[^a-zA-Z0-9- _.]/g, '');
+            teacherFolder?.file(fileName, blob);
+          } catch (e) {
+            console.error('Error fetching document:', e);
+          } finally {
+            processedFiles++;
+            setBulkZipProgress({ current: processedFiles, total: totalFiles, batch: 1, totalBatches: 1 });
           }
         }
-        
-        const content = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
-        const dateStr = new Date().toISOString().slice(0, 10);
-        const batchSuffix = totalBatches > 1 ? `_Part${batchIdx + 1}` : '';
-        saveAs(content, `Bulk_Submissions_${dateStr}${batchSuffix}.zip`);
       }
+      
+      const content = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+      saveAs(content, `${zipFilename}.zip`);
+      alert(`Successfully downloaded ${totalFiles} documents.`);
     } catch (err: any) {
       console.error('Bulk download error:', err);
       alert(`Failed to create bulk ZIP file. Error: ${err?.message || String(err)}`);
@@ -382,6 +368,29 @@ export default function AdminDashboard() {
       setBulkDownloading(false);
       setBulkZipProgress(null);
     }
+  };
+
+  const handleDownloadAllSubmissions = async () => {
+    const dateStr = new Date().toISOString().slice(0, 10);
+    await downloadZippedSubmissions(filteredSubmissions, `Bulk_Submissions_${dateStr}`);
+  };
+
+  // State for circuit and school bulk download
+  const [downloadCircuit, setDownloadCircuit] = useState('');
+  const [downloadSchool, setDownloadSchool] = useState('');
+
+  const handleBulkDownloadByCircuit = async () => {
+    if (!downloadCircuit) return alert('Please select a circuit.');
+    const circuitSubs = submissions.filter(s => s.circuit === downloadCircuit);
+    const dateStr = new Date().toISOString().slice(0, 10);
+    await downloadZippedSubmissions(circuitSubs, `Circuit_${downloadCircuit.replace(/[^a-zA-Z0-9- _]/g, '')}_${dateStr}`);
+  };
+
+  const handleBulkDownloadBySchool = async () => {
+    if (!downloadSchool) return alert('Please select a school.');
+    const schoolSubs = submissions.filter(s => s.school === downloadSchool);
+    const dateStr = new Date().toISOString().slice(0, 10);
+    await downloadZippedSubmissions(schoolSubs, `School_${downloadSchool.replace(/[^a-zA-Z0-9- _]/g, '')}_${dateStr}`);
   };
 
   const dynamicCircuits = Array.from(new Set(schoolsData.map((s: any) => s.circuit))).sort();
@@ -395,6 +404,23 @@ export default function AdminDashboard() {
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#F3F4F6', color: '#111827', fontFamily: 'system-ui, sans-serif' }}>
+      {/* Bulk Download Progress Modal */}
+      {bulkDownloading && bulkZipProgress && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: '#fff', padding: '32px', borderRadius: '16px', textAlign: 'center', width: '400px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' }}>
+            <h3 style={{ margin: '0 0 16px', fontSize: '20px', color: '#002147' }}>Downloading Data...</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', margin: '0 0 8px', fontSize: '14px', fontWeight: '600' }}>
+              <span style={{ color: '#10B981' }}>Downloaded: {bulkZipProgress.current}</span>
+              <span style={{ color: '#6B7280' }}>Yet to download: {bulkZipProgress.total - bulkZipProgress.current}</span>
+            </div>
+            <div style={{ width: '100%', height: '10px', backgroundColor: '#E5E7EB', borderRadius: '5px', overflow: 'hidden', marginBottom: '16px' }}>
+              <div style={{ width: `${(bulkZipProgress.current / bulkZipProgress.total) * 100}%`, height: '100%', backgroundColor: '#10B981', transition: 'width 0.2s' }}></div>
+            </div>
+            <p style={{ margin: 0, fontSize: '13px', color: '#6B7280' }}>Please wait, compressing into a single ZIP file.</p>
+          </div>
+        </div>
+      )}
+
       {/* Top Banner Header */}
       <header style={{ background: 'linear-gradient(135deg, #002147 0%, #001530 100%)', color: '#FFFFFF', padding: '20px 32px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div 
@@ -959,6 +985,62 @@ export default function AdminDashboard() {
                 >
                   Add School
                 </button>
+              </div>
+            </div>
+
+            {/* Bulk Download Staff Data */}
+            <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
+              <h4 style={{ fontSize: '14px', fontWeight: '700', color: '#111827', margin: '0 0 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FolderDown size={16} /> Bulk Download Staff Data
+              </h4>
+              <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                
+                {/* Download by Circuit */}
+                <div style={{ flex: '1 1 300px', backgroundColor: '#F9FAFB', padding: '16px', borderRadius: '12px', border: '1px solid #E5E7EB' }}>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#4B5563', textTransform: 'uppercase', marginBottom: '8px' }}>Download by Circuit</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <select
+                      value={downloadCircuit}
+                      onChange={e => setDownloadCircuit(e.target.value)}
+                      style={{ flex: 1, padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '13px', outline: 'none', backgroundColor: '#FFF' }}
+                    >
+                      <option value="">-- Select Circuit --</option>
+                      {displayCircuits.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <button
+                      onClick={handleBulkDownloadByCircuit}
+                      disabled={!downloadCircuit || bulkDownloading}
+                      style={{ padding: '0 16px', borderRadius: '8px', border: 'none', backgroundColor: '#002147', color: '#FFF', fontSize: '13px', fontWeight: '600', cursor: (!downloadCircuit || bulkDownloading) ? 'not-allowed' : 'pointer', opacity: (!downloadCircuit || bulkDownloading) ? 0.6 : 1 }}
+                    >
+                      Download ZIP
+                    </button>
+                  </div>
+                </div>
+
+                {/* Download by School */}
+                <div style={{ flex: '1 1 300px', backgroundColor: '#F9FAFB', padding: '16px', borderRadius: '12px', border: '1px solid #E5E7EB' }}>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#4B5563', textTransform: 'uppercase', marginBottom: '8px' }}>Download by School</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <select
+                      value={downloadSchool}
+                      onChange={e => setDownloadSchool(e.target.value)}
+                      style={{ flex: 1, padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '13px', outline: 'none', backgroundColor: '#FFF' }}
+                    >
+                      <option value="">-- Select School --</option>
+                      {schoolsData.slice().sort((a, b) => a.school.localeCompare(b.school)).map((s: any) => (
+                        <option key={s.id} value={s.school}>{s.school}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={handleBulkDownloadBySchool}
+                      disabled={!downloadSchool || bulkDownloading}
+                      style={{ padding: '0 16px', borderRadius: '8px', border: 'none', backgroundColor: '#002147', color: '#FFF', fontSize: '13px', fontWeight: '600', cursor: (!downloadSchool || bulkDownloading) ? 'not-allowed' : 'pointer', opacity: (!downloadSchool || bulkDownloading) ? 0.6 : 1 }}
+                    >
+                      Download ZIP
+                    </button>
+                  </div>
+                </div>
+
               </div>
             </div>
 
