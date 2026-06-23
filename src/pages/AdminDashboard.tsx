@@ -160,8 +160,9 @@ export default function AdminDashboard() {
       }
     }
     
-    // Ignore drafts (old submissions won't have a status, which is fine)
-    const isDraft = sub.status === 'draft';
+    // Ignore true drafts (no documents). Old submissions that got marked as draft by the auto-save bug 
+    // will still have their documents array, so we should show them.
+    const isDraft = sub.status === 'draft' && (!sub.documents || sub.documents.length === 0);
     
     return !isDraft && matchesSearch && matchesCategory && matchesCircuit && matchesSubject && matchesDate;
   });
