@@ -348,8 +348,10 @@ export default function AdminDashboard() {
             const response = await fetch(docItem.downloadURL);
             if (!response.ok) throw new Error(`Failed to fetch ${docItem.fileName} (${response.status})`);
             const blob = await response.blob();
-            const paddedIndex = String(idx + 1).padStart(2, '0');
-            const fileName = `${paddedIndex}_${sub.teacherName || 'file'}.pdf`.replace(/[^a-zA-Z0-9- _.]/g, '');
+            const safeDocType = docItem.documentType ? docItem.documentType.replace(/[^a-zA-Z0-9- _.]/g, '_') : String(idx + 1).padStart(2, '0');
+            const prefix = (sub.staffId || 'NO_ID').replace(/[^a-zA-Z0-9- _.]/g, '');
+            const teacherSafeName = (sub.teacherName || 'file').replace(/[^a-zA-Z0-9- _.]/g, '');
+            const fileName = `${prefix}_${teacherSafeName}_${safeDocType}.pdf`;
             teacherFolder?.file(fileName, blob);
           } catch (e) {
             console.error('Error fetching document:', e);

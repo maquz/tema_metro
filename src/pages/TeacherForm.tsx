@@ -126,7 +126,7 @@ function Sel({ value, onChange, options, disabled = false }: { value: string; on
 }
 
 // ── Section Components ─────────────────────────────────────
-function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, errors }: any) {
+function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, errors, onPhotoSelect }: any) {
   const photoRef = useRef<HTMLInputElement>(null);
   
   // Custom updater that also auto-populates teacherName
@@ -191,21 +191,8 @@ function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, error
               onChange={e => {
                 const file = e.target.files?.[0];
                 if (!file) return;
-                const img = new Image();
-                const url = URL.createObjectURL(file);
-                img.onload = () => {
-                  const MAX_W = 300; const MAX_H = 400;
-                  let w = img.width; let h = img.height;
-                  if (w > MAX_W) { h = Math.round(h * MAX_W / w); w = MAX_W; }
-                  if (h > MAX_H) { w = Math.round(w * MAX_H / h); h = MAX_H; }
-                  const canvas = document.createElement('canvas');
-                  canvas.width = w; canvas.height = h;
-                  canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
-                  const compressed = canvas.toDataURL('image/jpeg', 0.7);
-                  URL.revokeObjectURL(url);
-                  setF((p: FormState) => ({ ...p, photoUrl: compressed }));
-                };
-                img.src = url;
+                onPhotoSelect(file);
+                if (photoRef.current) photoRef.current.value = ''; // Reset input
               }} />
           </div>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -720,6 +707,7 @@ export default function TeacherForm() {
   const [schoolsData, setSchoolsData] = useState<any[]>([]);
   const [mySubmissions, setMySubmissions] = useState<any[]>([]);
   const [editSubmissionId, setEditSubmissionId] = useState<string | null>(null);
+  const [passportCropFile, setPassportCropFile] = useState<File | null>(null);
 
   const totalSections = SECTIONS.length;
   const pct = ((section + 1) / totalSections) * 100;
@@ -775,7 +763,7 @@ export default function TeacherForm() {
           const { photoUrl: _photo, ...formWithoutPhoto } = form;
           await updateDoc(doc(db, 'submissions', editSubmissionId), {
             ...formWithoutPhoto,
-            status: form.status || 'draft',
+            status: form.status || 'submitted',
             updatedAt: serverTimestamp(),
           });
         } else {
@@ -790,7 +778,7 @@ export default function TeacherForm() {
             const { photoUrl: _photo, ...formWithoutPhoto } = form;
             await updateDoc(doc(db, 'submissions', existingId), {
               ...formWithoutPhoto,
-              status: form.status || 'draft',
+              status: form.status || 'submitted',
               updatedAt: serverTimestamp(),
             });
             setEditSubmissionId(existingId);
@@ -964,9 +952,10 @@ export default function TeacherForm() {
           }
         }
 
-        const paddedIndex = String(i + 1).padStart(2, '0');
         const sanitizedTeacher = sanitizeForFilename(form.teacherName || form.firstName);
-        const newFilename = `${paddedIndex}_${sanitizedTeacher}.${ext}`;
+        const safeDocType = sanitizeForFilename(documentType);
+        const prefix = sanitizeForFilename(form.staffId || 'NO_ID');
+        const newFilename = `${prefix}_${sanitizedTeacher}_${safeDocType}.${ext}`;
         const renamedFile = new File([fileToUpload], newFilename, { type: fileToUpload.type });
 
         const formData = new FormData();
@@ -1012,7 +1001,7 @@ export default function TeacherForm() {
           const ia = new Uint8Array(ab);
           for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
           const photoBlob = new Blob([ab], { type: mimeType });
-          const photoFile = new File([photoBlob], `passport_${form.staffId || 'photo'}.jpg`, { type: 'image/jpeg' });
+          const photoFile = new File([photoBlob], `${sanitizeForFilename(form.staffId || 'NO_ID')}_${sanitizeForFilename(form.teacherName || form.firstName)}_Passport.jpg`, { type: 'image/jpeg' });
 
           const photoFormData = new FormData();
           photoFormData.append('file', photoFile);
@@ -1124,7 +1113,7 @@ export default function TeacherForm() {
   }
 
   const sectionComponents = [
-    <SectionPersonal f={form} setF={setForm} dynamicCircuits={dynamicCircuits} getSchoolsForCircuit={getSchoolsForCircuit} errors={errors} />,
+    <SectionPersonal f={form} setF={setForm} dynamicCircuits={dynamicCircuits} getSchoolsForCircuit={getSchoolsForCircuit} errors={errors} onPhotoSelect={setPassportCropFile} />,
     <SectionFamilyLang f={form} setF={setForm} />,
     <SectionQualifications f={form} setF={setForm} />,
     <SectionEmployment f={form} setF={setForm} />,
@@ -1269,6 +1258,22 @@ export default function TeacherForm() {
         </button>
       </div>
       <Footer theme="light" />
+
+      {passportCropFile && (
+        <ImageCropperModal
+          file={passportCropFile}
+          docLabel="Passport Photo"
+          onCancel={() => setPassportCropFile(null)}
+          onCropComplete={(croppedFile: File) => {
+            setPassportCropFile(null);
+            const reader = new FileReader();
+            reader.onload = () => {
+              setForm(f => ({ ...f, photoUrl: reader.result as string }));
+            };
+            reader.readAsDataURL(croppedFile);
+          }}
+        />
+      )}
     </div>
   );
 }
