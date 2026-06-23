@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, onSnapshot, doc, updateDoc, deleteDoc, addDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc, deleteDoc, addDoc, getDocs } from 'firebase/firestore';
 import { auth } from '../firebase';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { useAuth } from '../context/AuthContext';
 import Papa from 'papaparse';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
+import { Summary } from './TeacherForm';
 import Footer from '../components/Footer';
 import { 
   LogOut, Users, FileText, Activity, Search, Download, 
@@ -44,6 +45,7 @@ export default function AdminDashboard() {
   // Data States
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  const [cleaningDuplicates, setCleaningDuplicates] = useState(false);
   
   // Filtering & Search States
   const [searchTerm, setSearchTerm] = useState('');
@@ -113,6 +115,21 @@ export default function AdminDashboard() {
       unsubSchools();
     };
   }, []);
+
+  const fetchSubmissions = async () => {
+    try {
+      const querySnapshot = await getDocs(collection(db, 'submissions'));
+      const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      data.sort((a: any, b: any) => {
+        const timeA = a.submittedAt?.seconds || 0;
+        const timeB = b.submittedAt?.seconds || 0;
+        return timeB - timeA;
+      });
+      setSubmissions(data);
+    } catch (err) {
+      console.error('Error fetching submissions:', err);
+    }
+  };
 
   const formatTimestamp = (ts: any) => {
     if (!ts) return 'N/A';
@@ -384,6 +401,54 @@ export default function AdminDashboard() {
   const [downloadCircuit, setDownloadCircuit] = useState('');
   const [downloadSchool, setDownloadSchool] = useState('');
 
+  const handleCleanDuplicates = async () => {
+    if (!window.confirm('Are you sure you want to clean duplicates? This will keep the most recent record for each Staff ID and delete the older ones.')) {
+      return;
+    }
+    
+    setCleaningDuplicates(true);
+    try {
+      // Group submissions by uppercase staffId (ignoring empty staffIds)
+      const groups: Record<string, any[]> = {};
+      submissions.forEach(sub => {
+        if (!sub.staffId) return;
+        const normalizedId = sub.staffId.replace(/\s+/g, '').toUpperCase();
+        if (!groups[normalizedId]) {
+          groups[normalizedId] = [];
+        }
+        groups[normalizedId].push(sub);
+      });
+
+      let deletedCount = 0;
+
+      for (const staffId in groups) {
+        const docs = groups[staffId];
+        if (docs.length > 1) {
+          // Sort descending by submittedAt so the newest is first
+          docs.sort((a, b) => {
+            const timeA = new Date(a.submittedAt).getTime();
+            const timeB = new Date(b.submittedAt).getTime();
+            return timeB - timeA;
+          });
+
+          // Keep the first (newest), delete the rest
+          for (let i = 1; i < docs.length; i++) {
+            await deleteDoc(doc(db, 'submissions', docs[i].id));
+            deletedCount++;
+          }
+        }
+      }
+
+      alert(`Successfully removed ${deletedCount} duplicate record(s).`);
+      fetchSubmissions(); // Refresh the list
+    } catch (error) {
+      console.error('Error cleaning duplicates:', error);
+      alert('Error cleaning duplicates. Please check console for details.');
+    } finally {
+      setCleaningDuplicates(false);
+    }
+  };
+
   const handleBulkDownloadByCircuit = async () => {
     if (!downloadCircuit) return alert('Please select a circuit.');
     const circuitSubs = submissions.filter(s => s.circuit === downloadCircuit);
@@ -603,6 +668,15 @@ export default function AdminDashboard() {
                     ? `Part ${bulkZipProgress.batch}/${bulkZipProgress.totalBatches} (${bulkZipProgress.current}/${bulkZipProgress.total})...` 
                     : 'Download All (ZIP)'}
                 </button>
+                {role === 'admin' && (
+                  <button
+                    onClick={handleCleanDuplicates}
+                    disabled={cleaningDuplicates}
+                    style={{ width: '100%', padding: '11px 16px', borderRadius: '8px', border: '1.5px solid #D97706', backgroundColor: '#FEF3C7', color: '#B45309', fontSize: '13px', fontWeight: '700', cursor: cleaningDuplicates ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'all 0.2s', opacity: cleaningDuplicates ? 0.6 : 1 }}
+                  >
+                    <Activity size={14} /> {cleaningDuplicates ? 'Cleaning...' : 'Clean Duplicates'}
+                  </button>
+                )}
               </div>
             </div>
 
@@ -1284,142 +1358,108 @@ export default function AdminDashboard() {
         })()}
       </div>
 
-      {/* VIEW DOCUMENTS MODAL */}
+      {/* VIEW SUBMISSION DETAILS MODAL */}
       {selectedSub && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
-          <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', maxWidth: '640px', width: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)' }}>
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
+          <div style={{ backgroundColor: '#F0F4F8', borderRadius: '20px', width: '100%', maxWidth: '700px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 50px rgba(0,0,0,0.25)', position: 'relative' }}>
             
-            {/* Modal Header */}
-            <div style={{ padding: '24px 24px 20px', borderBottom: '1px solid #E5E7EB', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ position: 'sticky', top: 0, backgroundColor: '#FFF', padding: '16px 24px', borderBottom: '1px solid #E5E7EB', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 10 }}>
               <div>
-                <h3 style={{ fontSize: '18px', fontWeight: '800', color: '#002147', margin: 0 }}>{selectedSub.teacherName}</h3>
-                <p style={{ fontSize: '12px', color: '#6B7280', margin: '4px 0 0' }}>
-                  Submitted on {formatTimestamp(selectedSub.submittedAt)}
-                </p>
+                <h3 style={{ fontSize: '18px', fontWeight: '800', color: '#002147', margin: '0 0 4px' }}>Teacher Details</h3>
+                <p style={{ fontSize: '12px', color: '#6B7280', margin: 0 }}>ID: {selectedSub.staffId || 'N/A'}</p>
               </div>
-              <button 
-                onClick={() => setSelectedSub(null)}
-                style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#9CA3AF', lineHeight: '1' }}
-              >
-                &times;
+              <button onClick={() => setSelectedSub(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280', padding: '4px' }}>
+                <X size={20} />
               </button>
             </div>
 
-            {/* Modal Content */}
             <div style={{ padding: '24px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', backgroundColor: '#F9FAFB', padding: '16px', borderRadius: '12px', marginBottom: '24px', fontSize: '13px' }}>
-                <div>
-                  <span style={{ fontSize: '10px', color: '#9CA3AF', textTransform: 'uppercase', fontWeight: '600' }}>Category</span>
-                  <div style={{ fontWeight: '700', color: '#002147', marginTop: '2px' }}>{selectedSub.category}</div>
-                </div>
-                {selectedSub.category === 'School' && (
-                  <>
-                    <div>
-                      <span style={{ fontSize: '10px', color: '#9CA3AF', textTransform: 'uppercase', fontWeight: '600' }}>Circuit</span>
-                      <div style={{ fontWeight: '700', color: '#002147', marginTop: '2px' }}>{selectedSub.circuit}</div>
-                    </div>
-                    <div>
-                      <span style={{ fontSize: '10px', color: '#9CA3AF', textTransform: 'uppercase', fontWeight: '600' }}>School</span>
-                      <div style={{ fontWeight: '700', color: '#002147', marginTop: '2px' }}>{selectedSub.school}</div>
-                    </div>
-                    <div>
-                      <span style={{ fontSize: '10px', color: '#9CA3AF', textTransform: 'uppercase', fontWeight: '600' }}>Subject</span>
-                      <div style={{ fontWeight: '700', color: '#002147', marginTop: '2px' }}>{selectedSub.subject}</div>
-                    </div>
-                  </>
-                )}
-                <div>
-                  <span style={{ fontSize: '10px', color: '#9CA3AF', textTransform: 'uppercase', fontWeight: '600' }}>Sex</span>
-                  <div style={{ fontWeight: '700', color: '#002147', marginTop: '2px' }}>{selectedSub.sex || 'N/A'}</div>
-                </div>
-                <div>
-                  <span style={{ fontSize: '10px', color: '#9CA3AF', textTransform: 'uppercase', fontWeight: '600' }}>Submitted By Email</span>
-                  <div style={{ fontWeight: '700', color: '#002147', marginTop: '2px' }}>{selectedSub.submittedByEmail || 'N/A'}</div>
-                </div>
-              </div>
+              <Summary f={selectedSub} isPreview={true} />
 
-              <h4 style={{ fontSize: '14px', fontWeight: '700', color: '#111827', margin: '0 0 12px' }}>Uploaded Documents Checklist</h4>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {DOCUMENTS.map((docName, index) => {
-                  const matchingDoc = selectedSub.documents?.find((d: any) => d.documentType === docName);
-                  
-                  return (
-                    <div 
-                      key={index} 
-                      style={{ 
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
-                        padding: '12px 16px', borderRadius: '10px', border: '1.5px solid',
-                        borderColor: matchingDoc ? '#ECFDF5' : '#F3F4F6',
-                        backgroundColor: matchingDoc ? '#F0FDF4' : '#FAFAFA'
-                      }}
-                    >
-                      <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', flex: 1, marginRight: '16px' }}>
-                        <div style={{ 
-                          width: '20px', height: '20px', borderRadius: '50%', 
-                          backgroundColor: matchingDoc ? '#10B981' : '#9CA3AF',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px'
-                        }}>
-                          <span style={{ fontSize: '11px', color: '#FFF', fontWeight: 'bold' }}>{index + 1}</span>
+              <div style={{ marginTop: '32px', backgroundColor: '#FFF', borderRadius: '16px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                <h4 style={{ fontSize: '14px', fontWeight: '800', color: '#111827', margin: '0 0 16px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Uploaded Documents Checklist</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {DOCUMENTS.map((docName, index) => {
+                    const matchingDoc = selectedSub.documents?.find((d: any) => d.documentType === docName);
+                    
+                    return (
+                      <div 
+                        key={index} 
+                        style={{ 
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
+                          padding: '12px 16px', borderRadius: '10px', border: '1.5px solid',
+                          borderColor: matchingDoc ? '#ECFDF5' : '#E5E7EB',
+                          backgroundColor: matchingDoc ? '#F0FDF4' : '#FAFAFA'
+                        }}
+                      >
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flex: 1, marginRight: '16px' }}>
+                          <div style={{ 
+                            width: '24px', height: '24px', borderRadius: '50%', 
+                            backgroundColor: matchingDoc ? '#10B981' : '#9CA3AF',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                          }}>
+                            <span style={{ fontSize: '11px', color: '#FFF', fontWeight: 'bold' }}>{index + 1}</span>
+                          </div>
+                          <span style={{ fontSize: '13px', fontWeight: '600', color: matchingDoc ? '#065F46' : '#4B5563' }}>
+                            {docName}
+                          </span>
                         </div>
-                        <span style={{ fontSize: '13px', fontWeight: '600', color: matchingDoc ? '#065F46' : '#4B5563', lineHeight: '1.4' }}>
-                          {docName}
-                        </span>
+
+                        {matchingDoc ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <button
+                              onClick={() => {
+                                if (navigator.share) {
+                                  navigator.share({
+                                    title: docName,
+                                    url: matchingDoc.downloadURL
+                                  }).catch(console.error);
+                                } else {
+                                  navigator.clipboard.writeText(matchingDoc.downloadURL);
+                                  alert('Link copied to clipboard!');
+                                }
+                              }}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: '4px', textDecoration: 'none',
+                                color: '#6B7280', fontSize: '12px', fontWeight: '700', backgroundColor: '#FFF',
+                                border: '1.5px solid #D1D5DB', padding: '6px 12px', borderRadius: '6px',
+                                transition: 'all 0.2s', flexShrink: 0, cursor: 'pointer'
+                              }}
+                              onMouseOver={e => { e.currentTarget.style.backgroundColor = '#F3F4F6'; e.currentTarget.style.color = '#374151'; }}
+                              onMouseOut={e => { e.currentTarget.style.backgroundColor = '#FFF'; e.currentTarget.style.color = '#6B7280'; }}
+                            >
+                              Share <Share2 size={12} />
+                            </button>
+                            <a 
+                              href={matchingDoc.downloadURL} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              style={{ 
+                                display: 'flex', alignItems: 'center', gap: '4px', textDecoration: 'none',
+                                color: '#10B981', fontSize: '12px', fontWeight: '700', backgroundColor: '#FFF',
+                                border: '1.5px solid #10B981', padding: '6px 12px', borderRadius: '6px',
+                                transition: 'all 0.2s', flexShrink: 0
+                              }}
+                              onMouseOver={e => { e.currentTarget.style.backgroundColor = '#10B981'; e.currentTarget.style.color = '#FFF'; }}
+                              onMouseOut={e => { e.currentTarget.style.backgroundColor = '#FFF'; e.currentTarget.style.color = '#10B981'; }}
+                            >
+                              Open File <ExternalLink size={12} />
+                            </a>
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '12px', color: '#9CA3AF', fontWeight: '600', fontStyle: 'italic', flexShrink: 0 }}>
+                            Missing
+                          </span>
+                        )}
                       </div>
-
-                      {matchingDoc ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <button
-                            onClick={() => {
-                              if (navigator.share) {
-                                navigator.share({
-                                  title: docName,
-                                  url: matchingDoc.downloadURL
-                                }).catch(console.error);
-                              } else {
-                                navigator.clipboard.writeText(matchingDoc.downloadURL);
-                                alert('Link copied to clipboard!');
-                              }
-                            }}
-                            style={{
-                              display: 'flex', alignItems: 'center', gap: '4px', textDecoration: 'none',
-                              color: '#6B7280', fontSize: '12px', fontWeight: '700', backgroundColor: '#FFF',
-                              border: '1.5px solid #D1D5DB', padding: '6px 12px', borderRadius: '6px',
-                              transition: 'all 0.2s', flexShrink: 0, cursor: 'pointer'
-                            }}
-                            onMouseOver={e => { e.currentTarget.style.backgroundColor = '#F3F4F6'; e.currentTarget.style.color = '#374151'; }}
-                            onMouseOut={e => { e.currentTarget.style.backgroundColor = '#FFF'; e.currentTarget.style.color = '#6B7280'; }}
-                          >
-                            Share <Share2 size={12} />
-                          </button>
-                          <a 
-                            href={matchingDoc.downloadURL} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            style={{ 
-                              display: 'flex', alignItems: 'center', gap: '4px', textDecoration: 'none',
-                              color: '#10B981', fontSize: '12px', fontWeight: '700', backgroundColor: '#FFF',
-                              border: '1.5px solid #10B981', padding: '6px 12px', borderRadius: '6px',
-                              transition: 'all 0.2s', flexShrink: 0
-                            }}
-                            onMouseOver={e => { e.currentTarget.style.backgroundColor = '#10B981'; e.currentTarget.style.color = '#FFF'; }}
-                            onMouseOut={e => { e.currentTarget.style.backgroundColor = '#FFF'; e.currentTarget.style.color = '#10B981'; }}
-                          >
-                            Open File <ExternalLink size={12} />
-                          </a>
-                        </div>
-                      ) : (
-                        <span style={{ fontSize: '12px', color: '#9CA3AF', fontWeight: '600', fontStyle: 'italic', flexShrink: 0 }}>
-                          Missing
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
             {/* Modal Footer */}
-            <div style={{ padding: '16px 24px', borderTop: '1px solid #E5E7EB', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#F9FAFB', borderBottomLeftRadius: '16px', borderBottomRightRadius: '16px' }}>
+            <div style={{ padding: '16px 24px', borderTop: '1px solid #E5E7EB', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#FFF', borderBottomLeftRadius: '16px', borderBottomRightRadius: '16px', position: 'sticky', bottom: 0, zIndex: 10 }}>
               <button
                 onClick={() => { setSelectedSub(null); handleDownloadAll(selectedSub); }}
                 disabled={downloadingId === selectedSub?.id}

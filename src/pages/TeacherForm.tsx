@@ -464,7 +464,7 @@ function SectionNameSig({ f, setF }: { f: FormState; setF: React.Dispatch<React.
   );
 }
 
-function Summary({ f, onReset, isPreview = false }: { f: FormState; onReset?: () => void; isPreview?: boolean }) {
+export function Summary({ f, onReset, isPreview = false }: { f: FormState; onReset?: () => void; isPreview?: boolean }) {
   const row = (label: string, val: string) => val ? (
     <div className="summary-item">
       <span className="summary-key">{label}</span>
@@ -523,7 +523,7 @@ function Summary({ f, onReset, isPreview = false }: { f: FormState; onReset?: ()
         </div>
       )}
 
-      {f.academic.some(r => r.level) && (
+      {f.academic?.some(r => r.level) && (
         <div className="form-card">
           <div style={{ fontWeight: 700, color: '#002147', fontSize: 12, marginBottom: 8, textTransform: 'uppercase' }}>Academic Qualifications</div>
           {f.academic.filter(r => r.level).map((r, i) => (
@@ -535,7 +535,7 @@ function Summary({ f, onReset, isPreview = false }: { f: FormState; onReset?: ()
         </div>
       )}
 
-      {f.professional.some(r => r.course) && (
+      {f.professional?.some(r => r.course) && (
         <div className="form-card">
           <div style={{ fontWeight: 700, color: '#002147', fontSize: 12, marginBottom: 8, textTransform: 'uppercase' }}>Professional Qualifications</div>
           {f.professional.filter(r => r.course).map((r, i) => (
@@ -547,7 +547,7 @@ function Summary({ f, onReset, isPreview = false }: { f: FormState; onReset?: ()
         </div>
       )}
 
-      {f.promotions.some(r => r.kind) && (
+      {f.promotions?.some(r => r.kind) && (
         <div className="form-card">
           <div style={{ fontWeight: 700, color: '#002147', fontSize: 12, marginBottom: 8, textTransform: 'uppercase' }}>Promotions</div>
           {f.promotions.filter(r => r.kind).map((r, i) => (
@@ -559,7 +559,7 @@ function Summary({ f, onReset, isPreview = false }: { f: FormState; onReset?: ()
         </div>
       )}
 
-      {f.employment.some(r => r.particulars) && (
+      {f.employment?.some(r => r.particulars) && (
         <div className="form-card">
           <div style={{ fontWeight: 700, color: '#002147', fontSize: 12, marginBottom: 8, textTransform: 'uppercase' }}>Employment History</div>
           {f.employment.filter(r => r.particulars).map((r, i) => (
@@ -770,7 +770,11 @@ export default function TeacherForm() {
           // Look for existing record by staffId within user's own submissions to satisfy security rules
           const q = query(collection(db, 'submissions'), where('submittedBy', '==', user?.uid ?? ''));
           const snap = await getDocs(q);
-          const existingDoc = snap.docs.find(d => d.data().staffId === form.staffId.trim());
+          const normalizedInputId = form.staffId.replace(/\s+/g, '').toUpperCase();
+          const existingDoc = snap.docs.find(d => {
+            const docStaffId = d.data().staffId?.replace(/\s+/g, '').toUpperCase();
+            return docStaffId === normalizedInputId;
+          });
           if (existingDoc) {
             // Update existing record
             const existingId = existingDoc.id;
@@ -1047,7 +1051,11 @@ export default function TeacherForm() {
         // Check if a record with this staffId already exists within user's own submissions
         const q = query(collection(db, 'submissions'), where('submittedBy', '==', user?.uid ?? ''));
         const snap = await getDocs(q);
-        const existingDoc = snap.docs.find(d => d.data().staffId === form.staffId.trim());
+        const normalizedInputId = form.staffId.replace(/\s+/g, '').toUpperCase();
+        const existingDoc = snap.docs.find(d => {
+          const docStaffId = d.data().staffId?.replace(/\s+/g, '').toUpperCase();
+          return docStaffId === normalizedInputId;
+        });
         if (existingDoc) {
           const existingId = existingDoc.id;
           await updateDoc(doc(db, 'submissions', existingId), {
