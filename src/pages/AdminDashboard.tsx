@@ -846,10 +846,7 @@ export default function AdminDashboard() {
                     </tbody>
                   </table>
                   
-                  {/* Hidden PDF content for generation */}
-                  <div style={{ position: 'absolute', left: '-9999px', top: 0 }}>
-                    <PersonalRecordPDF ref={pdfRef} f={selectedSub} />
-                  </div>
+                  
                 </div>
               )}
             </div>
