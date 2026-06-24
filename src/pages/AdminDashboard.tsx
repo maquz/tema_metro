@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
 import { collection, onSnapshot, doc, updateDoc, deleteDoc, addDoc, getDocs } from 'firebase/firestore';
 import { auth } from '../firebase';
@@ -8,11 +8,14 @@ import Papa from 'papaparse';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { Summary } from './TeacherForm';
+import { PersonalRecordPDF } from '../components/PersonalRecordPDF';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 import Footer from '../components/Footer';
 import { 
   LogOut, Users, FileText, Activity, Search, Download, 
   ChevronRight, ExternalLink, BarChart3, TrendingUp, GraduationCap, Building2, ShieldCheck,
-  Pencil, Trash2, FolderDown, Plus, KeyRound, X, Save, Share2
+  Pencil, Trash2, FolderDown, Plus, KeyRound, X, Save, Share2, Printer
 } from 'lucide-react';
 
 const CIRCUITS = [
@@ -46,6 +49,9 @@ export default function AdminDashboard() {
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [cleaningDuplicates, setCleaningDuplicates] = useState(false);
+  const [showDuplicatesModal, setShowDuplicatesModal] = useState(false);
+  const [duplicateGroups, setDuplicateGroups] = useState<{ staffId: string, duplicates: any[], keep: any }[]>([]);
+  const [deletedDuplicatesList, setDeletedDuplicatesList] = useState<any[]>([]);
   
   // Filtering & Search States
   const [searchTerm, setSearchTerm] = useState('');
@@ -57,6 +63,8 @@ export default function AdminDashboard() {
 
   // Selected submission modal
   const [selectedSub, setSelectedSub] = useState<any | null>(null);
+  const pdfRef = useRef<HTMLDivElement>(null);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
   // Edit modal state
   const [editSub, setEditSub] = useState<any | null>(null);
@@ -255,6 +263,7 @@ export default function AdminDashboard() {
     setEditSub(sub);
     setEditForm({
       teacherName: sub.teacherName || '',
+      staffId: sub.staffId || '',
       category: sub.category || 'School',
       circuit: sub.circuit || '',
       school: sub.school || '',
@@ -298,7 +307,9 @@ export default function AdminDashboard() {
     setDownloadingId(sub.id);
     try {
       const zip = new JSZip();
-      const teacherFolder = zip.folder(sub.teacherName || 'Teacher');
+      const safeId = (sub.staffId || 'NO_ID').replace(/[^a-zA-Z0-9- _]/g, '');
+      const safeName = (sub.teacherName || 'Teacher').replace(/[^a-zA-Z0-9- _]/g, '');
+      const teacherFolder = zip.folder(`${safeId}_${safeName}`);
       await Promise.all(
         sub.documents.map(async (docItem: any, idx: number) => {
           try {
@@ -320,6 +331,47 @@ export default function AdminDashboard() {
       alert('Failed to create ZIP file. Please try again.');
     }
     setDownloadingId(null);
+  };
+
+  const handleGeneratePDF = async (sub: any, action: 'download' | 'print') => {
+    if (!pdfRef.current) return;
+    setIsGeneratingPDF(true);
+    try {
+      // Temporarily make the ref visible if needed, or rely on html2canvas to render it off-screen
+      const canvas = await html2canvas(pdfRef.current, { scale: 2, useCORS: true });
+      const imgData = canvas.toDataURL('image/jpeg', 1.0);
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      
+      // If content is longer than A4, split into multiple pages
+      let heightLeft = pdfHeight;
+      let position = 0;
+      const pageHeight = pdf.internal.pageSize.getHeight();
+
+      pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft >= 0) {
+        position = heightLeft - pdfHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
+        heightLeft -= pageHeight;
+      }
+
+      if (action === 'download') {
+        pdf.save(`GES_Personal_Record_${sub.staffId || 'NO_ID'}_${sub.teacherName || ''}.pdf`);
+      } else if (action === 'print') {
+        pdf.autoPrint();
+        window.open(pdf.output('bloburl'), '_blank');
+      }
+    } catch (err) {
+      console.error('Error generating PDF:', err);
+      alert('Failed to generate PDF.');
+    } finally {
+      setIsGeneratingPDF(false);
+    }
   };
 
   const downloadZippedSubmissions = async (targetSubmissions: any[], zipFilename: string) => {
@@ -358,7 +410,8 @@ export default function AdminDashboard() {
         const schoolFolder = sub.category === 'School' ? (sub.school || 'Unknown_School') : 'Education_Office';
         const safeSchoolFolder = schoolFolder.replace(/[^a-zA-Z0-9- _]/g, '');
         const safeTeacherName = `${sub.teacherName || 'Teacher'}`.replace(/[^a-zA-Z0-9- _]/g, '');
-        const teacherFolder = zip.folder(`${safeSchoolFolder}/${safeTeacherName}`);
+        const safeId = (sub.staffId || 'NO_ID').replace(/[^a-zA-Z0-9- _]/g, '');
+        const teacherFolder = zip.folder(`${safeSchoolFolder}/${safeId}_${safeTeacherName}`);
         
         for (let idx = 0; idx < sub.documents.length; idx++) {
           const docItem = sub.documents[idx];
@@ -401,49 +454,59 @@ export default function AdminDashboard() {
   const [downloadCircuit, setDownloadCircuit] = useState('');
   const [downloadSchool, setDownloadSchool] = useState('');
 
-  const handleCleanDuplicates = async () => {
-    if (!window.confirm('Are you sure you want to clean duplicates? This will keep the most recent record for each Staff ID and delete the older ones.')) {
+  const handleCleanDuplicates = () => {
+    const groups: Record<string, any[]> = {};
+    submissions.forEach(sub => {
+      if (!sub.staffId) return;
+      const normalizedId = sub.staffId.replace(/\s+/g, '').toUpperCase();
+      if (!groups[normalizedId]) {
+        groups[normalizedId] = [];
+      }
+      groups[normalizedId].push(sub);
+    });
+
+    const duplicates: { staffId: string, duplicates: any[], keep: any }[] = [];
+    
+    for (const staffId in groups) {
+      const docs = groups[staffId];
+      if (docs.length > 1) {
+        docs.sort((a, b) => {
+          const timeA = new Date(a.submittedAt).getTime();
+          const timeB = new Date(b.submittedAt).getTime();
+          return timeB - timeA; // Newest first
+        });
+        
+        duplicates.push({ staffId, keep: docs[0], duplicates: docs.slice(1) });
+      }
+    }
+
+    if (duplicates.length === 0) {
+      alert("No duplicates found.");
       return;
     }
-    
+
+    setDuplicateGroups(duplicates);
+    setDeletedDuplicatesList([]);
+    setShowDuplicatesModal(true);
+  };
+
+  const confirmDeleteDuplicates = async () => {
+    if (!window.confirm(`Are you sure you want to delete all older duplicates? This action cannot be undone.`)) return;
     setCleaningDuplicates(true);
     try {
-      // Group submissions by uppercase staffId (ignoring empty staffIds)
-      const groups: Record<string, any[]> = {};
-      submissions.forEach(sub => {
-        if (!sub.staffId) return;
-        const normalizedId = sub.staffId.replace(/\s+/g, '').toUpperCase();
-        if (!groups[normalizedId]) {
-          groups[normalizedId] = [];
-        }
-        groups[normalizedId].push(sub);
-      });
-
-      let deletedCount = 0;
-
-      for (const staffId in groups) {
-        const docs = groups[staffId];
-        if (docs.length > 1) {
-          // Sort descending by submittedAt so the newest is first
-          docs.sort((a, b) => {
-            const timeA = new Date(a.submittedAt).getTime();
-            const timeB = new Date(b.submittedAt).getTime();
-            return timeB - timeA;
-          });
-
-          // Keep the first (newest), delete the rest
-          for (let i = 1; i < docs.length; i++) {
-            await deleteDoc(doc(db, 'submissions', docs[i].id));
-            deletedCount++;
-          }
+      let deleted: any[] = [];
+      for (const group of duplicateGroups) {
+        for (const docObj of group.duplicates) {
+          await deleteDoc(doc(db, 'submissions', docObj.id));
+          deleted.push(docObj);
         }
       }
-
-      alert(`Successfully removed ${deletedCount} duplicate record(s).`);
-      fetchSubmissions(); // Refresh the list
+      setDeletedDuplicatesList(deleted);
+      setDuplicateGroups([]);
+      fetchSubmissions();
     } catch (error) {
       console.error('Error cleaning duplicates:', error);
-      alert('Error cleaning duplicates. Please check console for details.');
+      alert('Error cleaning duplicates.');
     } finally {
       setCleaningDuplicates(false);
     }
@@ -774,7 +837,7 @@ export default function AdminDashboard() {
                                 title="Delete record"
                                 style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', border: 'none', backgroundColor: '#CE1126', color: '#FFF', padding: '6px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                               >
-                                <Trash2 size={12} /> Del
+                                <Trash2 size={14} /> Delete 
                               </button>
                             </div>
                           </td>
@@ -782,6 +845,11 @@ export default function AdminDashboard() {
                       ))}
                     </tbody>
                   </table>
+                  
+                  {/* Hidden PDF content for generation */}
+                  <div style={{ position: 'absolute', left: '-9999px', top: 0 }}>
+                    <PersonalRecordPDF ref={pdfRef} f={selectedSub} />
+                  </div>
                 </div>
               )}
             </div>
@@ -1368,9 +1436,25 @@ export default function AdminDashboard() {
                 <h3 style={{ fontSize: '18px', fontWeight: '800', color: '#002147', margin: '0 0 4px' }}>Teacher Details</h3>
                 <p style={{ fontSize: '12px', color: '#6B7280', margin: 0 }}>ID: {selectedSub.staffId || 'N/A'}</p>
               </div>
-              <button onClick={() => setSelectedSub(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280', padding: '4px' }}>
-                <X size={20} />
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button 
+                  onClick={() => handleGeneratePDF(selectedSub, 'print')} 
+                  disabled={isGeneratingPDF}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '6px', border: '1.5px solid #E5E7EB', backgroundColor: '#FFF', color: '#374151', fontSize: '12px', fontWeight: '700', cursor: isGeneratingPDF ? 'not-allowed' : 'pointer' }}
+                >
+                  <Printer size={14} /> Print
+                </button>
+                <button 
+                  onClick={() => handleGeneratePDF(selectedSub, 'download')} 
+                  disabled={isGeneratingPDF}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '6px', border: '1.5px solid #002147', backgroundColor: '#002147', color: '#FFF', fontSize: '12px', fontWeight: '700', cursor: isGeneratingPDF ? 'not-allowed' : 'pointer' }}
+                >
+                  <Download size={14} /> {isGeneratingPDF ? 'Wait...' : 'Save PDF'}
+                </button>
+                <button onClick={() => setSelectedSub(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280', padding: '4px', marginLeft: '8px' }}>
+                  <X size={20} />
+                </button>
+              </div>
             </div>
 
             <div style={{ padding: '24px' }}>
@@ -1475,6 +1559,11 @@ export default function AdminDashboard() {
               </button>
             </div>
 
+            {/* Hidden PDF content for generation */}
+            <div style={{ position: 'absolute', left: '-9999px', top: 0 }}>
+              <PersonalRecordPDF ref={pdfRef} f={selectedSub} />
+            </div>
+
           </div>
         </div>
       )}
@@ -1492,6 +1581,7 @@ export default function AdminDashboard() {
             <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {([
                 { label: 'Teacher Name', key: 'teacherName', type: 'text' },
+                { label: 'Staff ID', key: 'staffId', type: 'text' },
               ]).map(({ label, key, type }) => (
                 <div key={key}>
                   <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#4B5563', textTransform: 'uppercase', marginBottom: '6px' }}>{label}</label>
@@ -1572,6 +1662,85 @@ export default function AdminDashboard() {
               >
                 {deleting ? 'Deleting...' : 'Yes, Delete'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DUPLICATES MANAGEMENT MODAL */}
+      {showDuplicatesModal && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
+          <div style={{ backgroundColor: '#FFF', borderRadius: '16px', maxWidth: '800px', width: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #E5E7EB', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#002147', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Activity size={20} color="#D97706" /> Duplicate Records Management
+              </h3>
+              <button onClick={() => setShowDuplicatesModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280' }}>
+                <X size={24} />
+              </button>
+            </div>
+
+            <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
+              {duplicateGroups.length > 0 ? (
+                <div>
+                  <p style={{ margin: '0 0 16px 0', fontSize: '14px', color: '#4B5563' }}>
+                    Found <strong>{duplicateGroups.length}</strong> staff member(s) with multiple submissions. The newest submission will be kept, and the older ones will be deleted.
+                  </p>
+                  {duplicateGroups.map(group => (
+                    <div key={group.staffId} style={{ marginBottom: '24px', border: '1px solid #E5E7EB', borderRadius: '8px', overflow: 'hidden' }}>
+                      <div style={{ backgroundColor: '#F9FAFB', padding: '12px 16px', borderBottom: '1px solid #E5E7EB', fontWeight: '700', color: '#111827' }}>
+                        Staff ID: <span style={{ fontFamily: 'monospace', color: '#0369A1' }}>{group.staffId}</span> ({group.keep.teacherName})
+                      </div>
+                      <div style={{ padding: '16px' }}>
+                        <div style={{ marginBottom: '12px' }}>
+                          <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#059669', backgroundColor: '#D1FAE5', padding: '4px 8px', borderRadius: '4px', display: 'inline-block', marginBottom: '8px' }}>Keep (Newest)</span>
+                          <div style={{ fontSize: '13px', color: '#374151' }}>
+                            Submitted: {formatTimestamp(group.keep.submittedAt)} | Category: {group.keep.category} | School: {group.keep.school || 'N/A'}
+                          </div>
+                        </div>
+                        <div>
+                          <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#DC2626', backgroundColor: '#FEE2E2', padding: '4px 8px', borderRadius: '4px', display: 'inline-block', marginBottom: '8px' }}>To Delete (Older)</span>
+                          <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '13px', color: '#6B7280' }}>
+                            {group.duplicates.map((d: any) => (
+                              <li key={d.id}>Submitted: {formatTimestamp(d.submittedAt)} | Category: {d.category} | School: {d.school || 'N/A'}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : deletedDuplicatesList.length > 0 ? (
+                <div>
+                  <div style={{ padding: '16px', backgroundColor: '#ECFDF5', border: '1px solid #10B981', borderRadius: '8px', marginBottom: '24px' }}>
+                    <h4 style={{ margin: '0 0 8px 0', color: '#065F46', fontSize: '15px' }}>Cleanup Successful!</h4>
+                    <p style={{ margin: 0, color: '#047857', fontSize: '14px' }}>Deleted {deletedDuplicatesList.length} duplicate record(s).</p>
+                  </div>
+                  <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#374151' }}>List of Deleted Records:</h4>
+                  <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '13px', color: '#6B7280', maxHeight: '300px', overflowY: 'auto' }}>
+                    {deletedDuplicatesList.map((d: any, i: number) => (
+                      <li key={i} style={{ marginBottom: '6px' }}>
+                        <strong>{d.teacherName}</strong> (ID: {d.staffId}) - Submitted: {formatTimestamp(d.submittedAt)}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <p style={{ color: '#6B7280', fontSize: '14px' }}>No duplicates to display.</p>
+              )}
+            </div>
+
+            <div style={{ padding: '16px 24px', borderTop: '1px solid #E5E7EB', display: 'flex', justifyContent: 'flex-end', gap: '12px', backgroundColor: '#F9FAFB', borderBottomLeftRadius: '16px', borderBottomRightRadius: '16px' }}>
+              <button onClick={() => setShowDuplicatesModal(false)} style={{ padding: '10px 20px', borderRadius: '8px', border: '1.5px solid #D1D5DB', backgroundColor: '#FFF', color: '#374151', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>Close</button>
+              {duplicateGroups.length > 0 && (
+                <button
+                  onClick={confirmDeleteDuplicates}
+                  disabled={cleaningDuplicates}
+                  style={{ padding: '10px 24px', borderRadius: '8px', border: 'none', backgroundColor: '#DC2626', color: '#FFF', fontSize: '13px', fontWeight: '700', cursor: cleaningDuplicates ? 'not-allowed' : 'pointer', opacity: cleaningDuplicates ? 0.7 : 1 }}
+                >
+                  {cleaningDuplicates ? 'Deleting...' : 'Delete All Older Duplicates'}
+                </button>
+              )}
             </div>
           </div>
         </div>
