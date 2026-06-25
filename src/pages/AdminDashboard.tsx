@@ -15,7 +15,7 @@ import Footer from '../components/Footer';
 import { 
   LogOut, Users, FileText, Activity, Search, Download, 
   ChevronRight, ExternalLink, BarChart3, TrendingUp, GraduationCap, Building2, ShieldCheck,
-  Pencil, Trash2, FolderDown, Plus, KeyRound, X, Save, Share2, Printer
+  Pencil, Trash2, FolderDown, Plus, KeyRound, X, Save, Share2, Printer, Menu
 } from 'lucide-react';
 
 const CIRCUITS = [
@@ -44,6 +44,7 @@ const DOCUMENTS = [
 export default function AdminDashboard() {
   const { user, role, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<'submissions' | 'users' | 'analytics' | 'schools'>('submissions');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   
   // Data States
   const [submissions, setSubmissions] = useState<any[]>([]);
@@ -540,7 +541,7 @@ export default function AdminDashboard() {
   const activeUsersCount = users.filter(isUserActive).length;
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#F3F4F6', color: '#111827', fontFamily: 'system-ui, sans-serif' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: '#F3F4F6', color: '#111827', fontFamily: 'system-ui, sans-serif' }}>
       {/* Bulk Download Progress Modal */}
       {bulkDownloading && bulkZipProgress && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -559,83 +560,115 @@ export default function AdminDashboard() {
       )}
 
       {/* Top Banner Header */}
-      <header style={{ background: 'linear-gradient(135deg, #002147 0%, #001530 100%)', color: '#FFFFFF', padding: '20px 32px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div 
-          onClick={() => window.location.href = '/'}
-          style={{ display: 'flex', alignItems: 'center', gap: '16px', cursor: 'pointer', borderRadius: '12px', padding: '8px 10px', transition: 'background-color 0.2s' }}
-          title="Click to Refresh & Return to Landing Page"
-          onMouseOver={e => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)')}
-          onMouseOut={e => (e.currentTarget.style.backgroundColor = 'transparent')}
-        >
-          <div style={{ width: '56px', height: '56px', borderRadius: '50%', backgroundColor: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2px', overflow: 'hidden' }}>
-            <img src="/logo.png" alt="GES Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-          </div>
-          <div>
-            <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.7)', fontWeight: '600', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Ghana Education Service</div>
-            <h1 style={{ fontSize: '20px', fontWeight: '800', margin: 0, letterSpacing: '-0.02em', lineHeight: '1.2' }}>Tema Metro Directorate</h1>
-            <div style={{ fontSize: '13px', color: '#CE1126', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: '2px' }}>Admin Panel Dashboard</div>
+      <header style={{ background: '#002147', color: '#FFFFFF', padding: '12px 24px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 50 }}>
+        {/* Left: Hamburger + Logo */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{ background: 'none', border: 'none', color: '#FFF', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '4px' }} onMouseOver={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'} onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}>
+            <Menu size={24} />
+          </button>
+          <div 
+            onClick={() => window.location.href = '/'}
+            style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', padding: '4px', borderRadius: '8px', transition: 'background-color 0.2s' }}
+            title="Click to Refresh & Return to Landing Page"
+            onMouseOver={e => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)')}
+            onMouseOut={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+          >
+            <div style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2px', overflow: 'hidden' }}>
+              <img src="/logo.png" alt="GES Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+            </div>
+            <div style={{}}>
+              <h1 style={{ fontSize: '16px', fontWeight: '800', margin: 0, lineHeight: '1.1' }}>Tema Metro Directorate</h1>
+              <div style={{ fontSize: '11px', color: '#CE1126', fontWeight: '700', textTransform: 'uppercase' }}>Admin Panel</div>
+            </div>
           </div>
         </div>
         
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+        {/* Center: Global Search */}
+        <div style={{ flex: '0 1 500px', margin: '0 24px', position: 'relative' }}>
+          <Search size={16} color="#6B7280" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+          <input 
+            type="text" 
+            value={searchTerm} 
+            onChange={e => setSearchTerm(e.target.value)} 
+            placeholder="Search teachers..." 
+            style={{ width: '100%', padding: '8px 12px 8px 36px', borderRadius: '20px', border: 'none', fontSize: '14px', backgroundColor: '#F3F4F6', color: '#111827', outline: 'none' }}
+          />
+        </div>
+
+        {/* Right: User + Actions */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-            <span style={{ fontSize: '14px', fontWeight: '600' }}>{user?.email}</span>
+            <span style={{ fontSize: '13px', fontWeight: '600' }}>{user?.email}</span>
             <span style={{ fontSize: '10px', backgroundColor: '#CE1126', color: '#FFF', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold', textTransform: 'uppercase', marginTop: '2px' }}>
               {role}
             </span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <button 
               onClick={() => window.location.href = '/teacher'}
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', border: '1.5px solid rgba(255,255,255,0.4)', backgroundColor: 'rgba(255,255,255,0.1)', color: '#FFF', fontSize: '13px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '6px', border: '1.5px solid rgba(255,255,255,0.4)', backgroundColor: 'rgba(255,255,255,0.1)', color: '#FFF', fontSize: '12px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s' }}
               onMouseOver={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.2)'}
               onMouseOut={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'}
             >
-              <FileText size={16} /> Submission Form
+              <FileText size={14} /> <span>Submission Form</span>
             </button>
             <button 
               onClick={logout}
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', border: '1.5px solid rgba(255,255,255,0.2)', backgroundColor: 'transparent', color: '#FFF', fontSize: '13px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '6px', border: '1.5px solid rgba(255,255,255,0.2)', backgroundColor: 'transparent', color: '#FFF', fontSize: '12px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s' }}
               onMouseOver={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'}
               onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}
             >
-              <LogOut size={16} /> Log Out
+              <LogOut size={14} />
             </button>
           </div>
         </div>
       </header>
 
-      <div style={{ padding: '32px' }}>
-        {/* Navigation Tabs and Stats Overview */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-          <div style={{ display: 'flex', gap: '12px', backgroundColor: '#E5E7EB', padding: '4px', borderRadius: '10px' }}>
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        {/* Left Sidebar */}
+        <aside style={{ 
+          width: sidebarOpen ? '260px' : '0px', 
+          backgroundColor: '#FFFFFF', 
+          borderRight: '1px solid #E5E7EB', 
+          transition: 'width 0.3s ease', 
+          overflowX: 'hidden',
+          display: 'flex',
+          flexDirection: 'column'
+        }}>
+          <div style={{ padding: '24px 16px', display: 'flex', flexDirection: 'column', gap: '8px', minWidth: '260px' }}>
+            <div style={{ fontSize: '11px', fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px', paddingLeft: '16px' }}>Main Menu</div>
             <button
               onClick={() => setActiveTab('submissions')}
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', border: 'none', backgroundColor: activeTab === 'submissions' ? '#002147' : 'transparent', color: activeTab === 'submissions' ? '#FFFFFF' : '#4B5563', fontWeight: '600', fontSize: '14px', cursor: 'pointer', transition: 'all 0.2s' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 16px', borderRadius: '8px', border: 'none', backgroundColor: activeTab === 'submissions' ? '#F3F4F6' : 'transparent', color: activeTab === 'submissions' ? '#002147' : '#4B5563', fontWeight: activeTab === 'submissions' ? '700' : '600', fontSize: '14px', cursor: 'pointer', transition: 'all 0.2s', textAlign: 'left', width: '100%' }}
             >
-              <FileText size={16} /> Submissions Monitor
+              <FileText size={18} color={activeTab === 'submissions' ? '#002147' : '#9CA3AF'} /> Submissions
             </button>
             <button
               onClick={() => setActiveTab('users')}
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', border: 'none', backgroundColor: activeTab === 'users' ? '#002147' : 'transparent', color: activeTab === 'users' ? '#FFFFFF' : '#4B5563', fontWeight: '600', fontSize: '14px', cursor: 'pointer', transition: 'all 0.2s' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 16px', borderRadius: '8px', border: 'none', backgroundColor: activeTab === 'users' ? '#F3F4F6' : 'transparent', color: activeTab === 'users' ? '#002147' : '#4B5563', fontWeight: activeTab === 'users' ? '700' : '600', fontSize: '14px', cursor: 'pointer', transition: 'all 0.2s', textAlign: 'left', width: '100%' }}
             >
-              <Users size={16} /> User Presence & Roles
+              <Users size={18} color={activeTab === 'users' ? '#002147' : '#9CA3AF'} /> System Users
             </button>
             <button
               onClick={() => setActiveTab('analytics')}
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', border: 'none', backgroundColor: activeTab === 'analytics' ? '#002147' : 'transparent', color: activeTab === 'analytics' ? '#FFFFFF' : '#4B5563', fontWeight: '600', fontSize: '14px', cursor: 'pointer', transition: 'all 0.2s' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 16px', borderRadius: '8px', border: 'none', backgroundColor: activeTab === 'analytics' ? '#F3F4F6' : 'transparent', color: activeTab === 'analytics' ? '#002147' : '#4B5563', fontWeight: activeTab === 'analytics' ? '700' : '600', fontSize: '14px', cursor: 'pointer', transition: 'all 0.2s', textAlign: 'left', width: '100%' }}
             >
-              <BarChart3 size={16} /> App Analytics
+              <BarChart3 size={18} color={activeTab === 'analytics' ? '#002147' : '#9CA3AF'} /> Analytics
             </button>
             <button
               onClick={() => setActiveTab('schools')}
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', border: 'none', backgroundColor: activeTab === 'schools' ? '#002147' : 'transparent', color: activeTab === 'schools' ? '#FFFFFF' : '#4B5563', fontWeight: '600', fontSize: '14px', cursor: 'pointer', transition: 'all 0.2s' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 16px', borderRadius: '8px', border: 'none', backgroundColor: activeTab === 'schools' ? '#F3F4F6' : 'transparent', color: activeTab === 'schools' ? '#002147' : '#4B5563', fontWeight: activeTab === 'schools' ? '700' : '600', fontSize: '14px', cursor: 'pointer', transition: 'all 0.2s', textAlign: 'left', width: '100%' }}
             >
-              <Building2 size={16} /> Schools Management
+              <Building2 size={18} color={activeTab === 'schools' ? '#002147' : '#9CA3AF'} /> Schools
             </button>
           </div>
+        </aside>
 
-          <div style={{ display: 'flex', gap: '16px' }}>
+        {/* Main Content */}
+        <main style={{ flex: 1, overflowY: 'auto', padding: '32px' }}>
+          
+          {/* Stats Overview */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '24px', gap: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#FFFFFF', padding: '10px 16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
               <Activity size={18} color="#10B981" />
               <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -651,26 +684,12 @@ export default function AdminDashboard() {
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Tab CONTENT 1: SUBMISSIONS MONITOR */}
-        {activeTab === 'submissions' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            {/* Filter Bar */}
-            <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '20px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', alignItems: 'end' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#4B5563', textTransform: 'uppercase', marginBottom: '6px' }}>Search Teacher</label>
-                <div style={{ position: 'relative' }}>
-                  <Search size={16} color="#9CA3AF" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
-                  <input 
-                    type="text" 
-                    value={searchTerm} 
-                    onChange={e => setSearchTerm(e.target.value)} 
-                    placeholder="Enter name..." 
-                    style={{ width: '100%', padding: '10px 12px 10px 36px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '13px', outline: 'none' }}
-                  />
-                </div>
-              </div>
+          {/* Tab CONTENT 1: SUBMISSIONS MONITOR */}
+          {activeTab === 'submissions' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              {/* Filter Bar */}
+              <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '20px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', alignItems: 'end' }}>
 
               <div>
                 <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#4B5563', textTransform: 'uppercase', marginBottom: '6px' }}>Category</label>
@@ -1425,6 +1444,7 @@ export default function AdminDashboard() {
             </div>
           );
         })()}
+        </main>
       </div>
 
       {/* VIEW SUBMISSION DETAILS MODAL */}

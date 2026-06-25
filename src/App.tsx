@@ -92,7 +92,7 @@ export default function App() {
           <Route 
             path="/teacher" 
             element={
-              <ProtectedRoute allowedRoles={['teacher']}>
+              <ProtectedRoute allowedRoles={['teacher', 'admin', 'editor', 'metro_officer']}>
                 <TeacherForm />
               </ProtectedRoute>
             } 
