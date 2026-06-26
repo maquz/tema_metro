@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Lock, Mail, GraduationCap, Building2, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { Lock, Mail, GraduationCap, Building2, ShieldCheck, ShieldAlert, Eye, EyeOff } from 'lucide-react';
 import Footer from '../components/Footer';
 
 type RoleOption = 'teacher' | 'metro_officer' | 'admin';
@@ -59,9 +59,27 @@ export default function Login() {
   );
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [secretCode, setSecretCode] = useState('');
   const [error, setError] = useState('');
+  const [resetMessage, setResetMessage] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const handleResetPassword = async () => {
+    if (!email) {
+      setError('Please enter your email address above to reset your password.');
+      return;
+    }
+    setError('');
+    setResetMessage('');
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setResetMessage('Password reset email sent! Check your inbox.');
+    } catch (err: any) {
+      console.error(err);
+      setError('Failed to send reset email. Please try again.');
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -285,6 +303,24 @@ export default function Login() {
             </div>
           )}
 
+          {resetMessage && (
+            <div
+              style={{
+                backgroundColor: 'rgba(0,107,63,0.15)',
+                border: '1px solid rgba(0,107,63,0.3)',
+                color: '#8AFFC2',
+                padding: '12px 16px',
+                borderRadius: '10px',
+                marginBottom: '16px',
+                fontSize: '13px',
+                lineHeight: '1.5',
+                textAlign: 'center',
+              }}
+            >
+              {resetMessage}
+            </div>
+          )}
+
           {/* Form */}
           <form onSubmit={handleLogin}>
             <div style={{ marginBottom: '16px' }}>
@@ -328,30 +364,41 @@ export default function Login() {
             </div>
 
             <div style={{ marginBottom: '24px' }}>
-              <label
-                style={{
-                  display: 'block',
-                  fontSize: '11px',
-                  fontWeight: '700',
-                  color: 'rgba(255,255,255,0.5)',
-                  marginBottom: '6px',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.06em',
-                }}
-              >
-                Password
-              </label>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <label
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: '700',
+                    color: 'rgba(255,255,255,0.5)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                  }}
+                >
+                  Password
+                </label>
+                <span
+                  onClick={handleResetPassword}
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    color: cfg.color,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Forgot Password?
+                </span>
+              </div>
               <div style={{ position: 'relative' }}>
                 <Lock size={16} color="rgba(255,255,255,0.3)" style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   required
                   placeholder="Enter your password"
                   style={{
                     width: '100%',
-                    padding: '13px 14px 13px 42px',
+                    padding: '13px 40px 13px 42px',
                     borderRadius: '10px',
                     border: '1.5px solid rgba(255,255,255,0.1)',
                     backgroundColor: 'rgba(255,255,255,0.05)',
@@ -364,6 +411,25 @@ export default function Login() {
                   onFocus={e => (e.target.style.borderColor = cfg.color)}
                   onBlur={e => (e.target.style.borderColor = 'rgba(255,255,255,0.1)')}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{
+                    position: 'absolute',
+                    right: '14px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {showPassword ? <EyeOff size={16} color="rgba(255,255,255,0.4)" /> : <Eye size={16} color="rgba(255,255,255,0.4)" />}
+                </button>
               </div>
             </div>
 

@@ -18,7 +18,7 @@ interface Child { name: string; dob: string; }
 
 const SUBJECTS = [
   'English', 'Mathematics', 'Science', 'Social Studies', 'ICT', 'French',
-  'RME', 'Creative Arts', 'Ghanaian Language', 'Physical Education'
+  'RME', 'Creative Arts', 'Ghanaian Language', 'Physical Education', 'Administration'
 ];
 
 const DOCUMENTS = [
@@ -60,6 +60,8 @@ interface FormState {
   nameChanges: NameRow[];
   // Employment
   employment: EmployRow[];
+  // Certification Date
+  certificationDate: string;
 }
 
 const initForm = (): FormState => ({
@@ -83,6 +85,7 @@ const initForm = (): FormState => ({
   presentStation: '', salaryLevel: '', salaryStep: '',
   nameChanges: [{ former: '', dateChange: '', authority: '' }],
   employment: [{ particulars: '', from: '', to: '', remarks: '' }],
+  certificationDate: '',
 });
 
 const SECTIONS = [
@@ -126,16 +129,13 @@ function Sel({ value, onChange, options, disabled = false }: { value: string; on
 }
 
 // ── Section Components ─────────────────────────────────────
-function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, errors, onPhotoSelect }: any) {
+function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, errors, onPhotoSelect, hasSubmissions }: any) {
   const photoRef = useRef<HTMLInputElement>(null);
   
-  // Custom updater that also auto-populates teacherName
   const upd = (key: keyof FormState) => (v: string) => {
     setF((p: FormState) => {
-      // Force all data to uppercase, except email
       const upperValue = (key === 'email' || key === 'photoUrl') ? v : v.toUpperCase();
       const next = { ...p, [key]: upperValue };
-      // Auto-combine names to preserve Admin DB structure
       if (key === 'firstName' || key === 'otherNames' || key === 'surname') {
         next.teacherName = `${next.firstName || ''} ${next.otherNames || ''} ${next.surname || ''}`.trim();
       }
@@ -145,8 +145,7 @@ function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, error
     });
   };
 
-  const isEducationOffice = f.category === 'Education Office';
-  const isSchool = f.category === 'School';
+  const isSchool = f.category === 'BASIC SCHOOL' || f.category === 'SENIOR HIGH SCHOOL';
 
   return (
     <div style={{ paddingBottom: 80 }}>
@@ -156,19 +155,51 @@ function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, error
           <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>Registration / Posting</span>
         </div>
         
-        {isEducationOffice && (
-          <div style={{ marginBottom: '16px' }}>
-            <Field label="Category"><Inp value="Education Office" disabled onChange={() => {}} /></Field>
+        <div className="form-row cols-2" style={{ marginBottom: '16px' }}>
+          <div>
+            <Field label="Category" required>
+              <Sel 
+                value={f.category} 
+                onChange={upd('category')} 
+                options={['BASIC SCHOOL', 'SENIOR HIGH SCHOOL', 'Education Office']} 
+                disabled={hasSubmissions} 
+              />
+            </Field>
+            {errors.category && <p style={{ color: '#CE1126', fontSize: '12px', marginTop: '4px' }}>{errors.category}</p>}
           </div>
-        )}
+          <div>
+            <Field label="Staff ID" required>
+              <Inp value={f.staffId} onChange={upd('staffId')} placeholder="Staff ID" disabled={hasSubmissions} />
+            </Field>
+            {errors.staffId && <p style={{ color: '#CE1126', fontSize: '12px', marginTop: '4px' }}>{errors.staffId}</p>}
+          </div>
+        </div>
         
         {isSchool && (
           <>
-            <div className="form-row cols-2">
-              <Field label="Circuit Name" required><Sel value={f.circuit} onChange={upd('circuit')} options={dynamicCircuits} /></Field>
-              <Field label="School Name" required><Sel value={f.school} onChange={upd('school')} options={f.circuit ? getSchoolsForCircuit(f.circuit) : []} disabled={!f.circuit} /></Field>
-            </div>
-            {errors.circuit && <p style={{ color: '#CE1126', fontSize: '12px', margin: '-12px 0 12px' }}>{errors.circuit}</p>}
+            {f.category === 'SENIOR HIGH SCHOOL' ? (
+              <div className="form-row cols-1">
+                <Field label="School Name" required>
+                  <Sel 
+                    value={f.school} 
+                    onChange={upd('school')} 
+                    options={[
+                      'CHEMU SENIOR HIGH/TECHNICAL SCHOOL',
+                      'MANHEAN SENIOR HIGH/TECHNICAL SCHOOL',
+                      'OUR LADY OF MERCY SENIOR HIGH SCHOOL (OLAMS)',
+                      'TEMA METHODIST DAY SECONDARY SCHOOL',
+                      'TEMA PRESBYTERIAN SENIOR HIGH SCHOOL'
+                    ]} 
+                  />
+                </Field>
+              </div>
+            ) : (
+              <div className="form-row cols-2">
+                <Field label="Circuit Name" required><Sel value={f.circuit} onChange={upd('circuit')} options={dynamicCircuits} /></Field>
+                <Field label="School Name" required><Sel value={f.school} onChange={upd('school')} options={f.circuit ? getSchoolsForCircuit(f.circuit) : []} disabled={!f.circuit} /></Field>
+              </div>
+            )}
+            {errors.circuit && f.category !== 'SENIOR HIGH SCHOOL' && <p style={{ color: '#CE1126', fontSize: '12px', margin: '-12px 0 12px' }}>{errors.circuit}</p>}
             {errors.school && <p style={{ color: '#CE1126', fontSize: '12px', margin: '-12px 0 12px' }}>{errors.school}</p>}
             <div className="form-row cols-1">
               <Field label="Subject Taught" required><Sel value={f.subject} onChange={upd('subject')} options={SUBJECTS} /></Field>
@@ -180,7 +211,6 @@ function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, error
 
       <div className="section-title" style={{ margin: '0 0 0 0' }}>Biographic Details</div>
       <div className="form-card">
-        {/* Photo + names row */}
         <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
           <div>
             <div className="field-label">Passport Photo</div>
@@ -192,7 +222,7 @@ function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, error
                 const file = e.target.files?.[0];
                 if (!file) return;
                 onPhotoSelect(file);
-                if (photoRef.current) photoRef.current.value = ''; // Reset input
+                if (photoRef.current) photoRef.current.value = '';
               }} />
           </div>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -208,7 +238,7 @@ function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, error
         </div>
         <div className="form-row cols-2">
           <Field label="Reg. No."><Inp value={f.regNo} onChange={upd('regNo')} placeholder="Reg. No." /></Field>
-          <Field label="Staff ID"><Inp value={f.staffId} onChange={upd('staffId')} placeholder="Staff ID" /></Field>
+          <Field label="Staff ID"><Inp value={f.staffId} onChange={() => {}} placeholder="Auto-filled from Registration" disabled /></Field>
         </div>
         <div className="form-row cols-2">
           <Field label="Date of Birth" required><Inp value={f.dob} onChange={upd('dob')} type="date" /></Field>
@@ -237,7 +267,6 @@ function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, error
           <Field label="Date Confirmed"><Inp value={f.dateConfirmed} onChange={upd('dateConfirmed')} type="date" /></Field>
         </div>
       </div>
-
     </div>
   );
 }
@@ -328,7 +357,6 @@ function DynTable<T extends Record<string, string>>({
                   <td key={String(c.key)}>
                     <input value={row[c.key] as string} onChange={e => {
                       const updated = [...rows];
-                      // Also force uppercase in dynamic tables unless it's a date field (like 'from', 'to', 'effectiveDate')
                       const isDate = c.key === 'from' || c.key === 'to' || c.key === 'effectiveDate' || c.key === 'dateChange' || c.key === 'award';
                       updated[i] = { ...updated[i], [c.key]: isDate ? e.target.value : e.target.value.toUpperCase() };
                       setRows(updated);
@@ -429,6 +457,7 @@ function SectionEmployment({ f, setF }: { f: FormState; setF: React.Dispatch<Rea
 }
 
 function SectionNameSig({ f, setF }: { f: FormState; setF: React.Dispatch<React.SetStateAction<FormState>> }) {
+  const upd = (key: keyof FormState) => (v: string) => setF(p => ({ ...p, [key]: v }));
   return (
     <div style={{ paddingBottom: 80 }}>
       <div className="section-title">Name Change (if applicable)</div>
@@ -457,7 +486,7 @@ function SectionNameSig({ f, setF }: { f: FormState; setF: React.Dispatch<React.
           </div>
         </div>
         <div style={{ marginTop: 16 }}>
-          <Field label="Date"><Inp value={''} onChange={() => {}} type="date" /></Field>
+          <Field label="Date"><Inp value={f.certificationDate || ''} onChange={upd('certificationDate')} type="date" /></Field>
         </div>
       </div>
     </div>
@@ -733,17 +762,9 @@ export default function TeacherForm() {
   const dynamicCircuits = Array.from(new Set(schoolsData.map(s => s.circuit))).sort();
   const getSchoolsForCircuit = (circuit: string) => schoolsData.filter(s => s.circuit === circuit).map(s => s.school).sort();
 
-  const currentRole = role || 'teacher'; // Fallback for old users without roles
+  const currentRole = role || 'teacher';
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks, @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    // eslint-disable-next-line
-    if (currentRole === 'teacher') {
-      setForm(f => ({ ...f, category: 'School' }));
-    } else if (currentRole === 'metro_officer') {
-      setForm(f => ({ ...f, category: 'Education Office' }));
-    }
   }, [currentRole]);
 
   // Auto-Save Effect (Every 10 seconds)
@@ -751,15 +772,11 @@ export default function TeacherForm() {
     if (currentRole !== 'teacher' && currentRole !== 'metro_officer') return;
     
     const interval = setInterval(async () => {
-      // Don't auto save if staffId is missing, empty, or currently submitting
       if (!form.staffId || form.staffId.trim() === '') return;
       if (submitting) return;
 
       try {
-        // Check if a document with this staffId already exists
         if (editSubmissionId) {
-          // We already know the document ID, just update it
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { photoUrl: _photo, ...formWithoutPhoto } = form;
           await updateDoc(doc(db, 'submissions', editSubmissionId), {
             ...formWithoutPhoto,
@@ -767,7 +784,6 @@ export default function TeacherForm() {
             updatedAt: serverTimestamp(),
           });
         } else {
-          // Look for existing record by staffId within user's own submissions to satisfy security rules
           const q = query(collection(db, 'submissions'), where('submittedBy', '==', user?.uid ?? ''));
           const snap = await getDocs(q);
           const normalizedInputId = form.staffId.replace(/\s+/g, '').toUpperCase();
@@ -776,9 +792,7 @@ export default function TeacherForm() {
             return docStaffId === normalizedInputId;
           });
           if (existingDoc) {
-            // Update existing record
             const existingId = existingDoc.id;
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { photoUrl: _photo, ...formWithoutPhoto } = form;
             await updateDoc(doc(db, 'submissions', existingId), {
               ...formWithoutPhoto,
@@ -787,8 +801,6 @@ export default function TeacherForm() {
             });
             setEditSubmissionId(existingId);
           } else {
-            // Create new draft
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { photoUrl: _photo2, ...formWithoutPhoto } = form;
             const docRef = await addDoc(collection(db, 'submissions'), {
               ...formWithoutPhoto,
@@ -812,8 +824,12 @@ export default function TeacherForm() {
   const validatePersonal = () => {
     const e: Partial<FormState> = {};
     if (!form.staffId || form.staffId.trim() === '') e.staffId = 'Required';
-    if (form.category === 'School') {
+    if (!form.category) e.category = 'Required';
+    if (form.category === 'BASIC SCHOOL') {
       if (!form.circuit) e.circuit = 'Required';
+      if (!form.school) e.school = 'Required';
+      if (!form.subject) e.subject = 'Required';
+    } else if (form.category === 'SENIOR HIGH SCHOOL') {
       if (!form.school) e.school = 'Required';
       if (!form.subject) e.subject = 'Required';
     }
@@ -838,19 +854,17 @@ export default function TeacherForm() {
   const allUploaded = requiredUploadedCount === 4;
 
   const handleEditSubmission = (sub: any) => {
-    // Merge the existing sub with initForm structure
     setForm({
       ...initForm(),
       ...sub,
-      // Ensure specific string fallback for old records
-      category: sub.category,
+      category: sub.category || '',
       circuit: sub.circuit || '',
       school: sub.school || '',
-      teacherName: sub.teacherName || '',
+      subject: sub.subject || '',
+      certificationDate: sub.certificationDate || '',
       firstName: sub.firstName || sub.teacherName?.split(' ')[0] || '',
       surname: sub.surname || sub.teacherName?.split(' ').slice(1).join(' ') || '',
       sex: sub.sex || '',
-      subject: sub.subject || 'English',
     });
     setEditSubmissionId(sub.id);
     
@@ -1117,11 +1131,11 @@ export default function TeacherForm() {
   }
 
   if (section === 7) {
-    return <Summary f={form} onReset={() => { setForm(initForm()); setSection(0); setEditSubmissionId(null); setFiles(DOCUMENTS.map(() => [])); }} />;
+    return <Summary f={form} onReset={mySubmissions.length > 0 ? undefined : () => { setForm(initForm()); setSection(0); setEditSubmissionId(null); setFiles(DOCUMENTS.map(() => [])); }} />;
   }
 
   const sectionComponents = [
-    <SectionPersonal f={form} setF={setForm} dynamicCircuits={dynamicCircuits} getSchoolsForCircuit={getSchoolsForCircuit} errors={errors} onPhotoSelect={setPassportCropFile} />,
+    <SectionPersonal f={form} setF={setForm} dynamicCircuits={dynamicCircuits} getSchoolsForCircuit={getSchoolsForCircuit} errors={errors} onPhotoSelect={setPassportCropFile} hasSubmissions={mySubmissions.length > 0} />,
     <SectionFamilyLang f={form} setF={setForm} />,
     <SectionQualifications f={form} setF={setForm} />,
     <SectionEmployment f={form} setF={setForm} />,
@@ -1181,12 +1195,16 @@ export default function TeacherForm() {
           </div>
         </div>
 
-        <div className="progress-label" style={{ color: 'rgba(255,255,255,0.7)', marginTop: 16, textAlign: 'left' }}>
-          {SECTIONS[section]} ({section + 1} of {totalSections})
-        </div>
-        <div className="progress-bar" style={{ backgroundColor: 'rgba(255,255,255,0.2)', marginTop: 4 }}>
-          <div className="progress-fill" style={{ width: `${pct}%`, backgroundColor: '#CE1126' }} />
-        </div>
+        {!(section === 0 && mySubmissions.length > 0 && !editSubmissionId) && (
+          <>
+            <div className="progress-label" style={{ color: 'rgba(255,255,255,0.7)', marginTop: 16, textAlign: 'left' }}>
+              {SECTIONS[section]} ({section + 1} of {totalSections})
+            </div>
+            <div className="progress-bar" style={{ backgroundColor: 'rgba(255,255,255,0.2)', marginTop: 4 }}>
+              <div className="progress-fill" style={{ width: `${pct}%`, backgroundColor: '#CE1126' }} />
+            </div>
+          </>
+        )}
       </div>
 
       <div style={{ padding: '20px 16px' }}>
@@ -1197,7 +1215,7 @@ export default function TeacherForm() {
               <div key={sub.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', border: '1px solid #E5E7EB', borderRadius: '8px', marginBottom: '8px' }}>
                 <div>
                   <div style={{ fontSize: '14px', fontWeight: '600', color: '#002147' }}>{sub.teacherName || sub.firstName}</div>
-                  <div style={{ fontSize: '12px', color: '#6B7280' }}>{sub.category === 'School' ? `${sub.school} (${sub.circuit})` : 'Education Office'}</div>
+                  <div style={{ fontSize: '12px', color: '#6B7280' }}>{sub.category === 'Education Office' ? 'Education Office' : `${sub.school} (${sub.circuit})`}</div>
                 </div>
                 <button onClick={() => handleEditSubmission(sub)} style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #D1D5DB', backgroundColor: '#FFF', color: '#002147', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>Edit</button>
               </div>
@@ -1206,65 +1224,71 @@ export default function TeacherForm() {
         )}
 
         {/* Dynamic section rendering */}
-        {section < 5 ? sectionComponents[section] : section === 5 ? (
-          <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-              <FileText size={16} color="#002147" />
-              <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>Documents to be Scanned</span>
-            </div>
-            <p style={{ fontSize: '12px', color: '#6B7280', marginBottom: '16px', marginTop: '4px' }}>
-              Scan or upload each document using your camera or file picker.
-            </p>
-            {DOCUMENTS.map((doc, i) => (
-              <FileUploadRow key={i} index={i} docLabel={doc} filesList={files[i]} onFilesChange={setFileGroup(i)} isOptional={i === 4} currentRole={currentRole} />
-            ))}
+        {!(section === 0 && mySubmissions.length > 0 && !editSubmissionId) && (
+          <>
+            {section < 5 ? sectionComponents[section] : section === 5 ? (
+              <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                  <FileText size={16} color="#002147" />
+                  <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>Documents to be Scanned</span>
+                </div>
+                <p style={{ fontSize: '12px', color: '#6B7280', marginBottom: '16px', marginTop: '4px' }}>
+                  Scan or upload each document using your camera or file picker.
+                </p>
+                {DOCUMENTS.map((doc, i) => (
+                  <FileUploadRow key={i} index={i} docLabel={doc} filesList={files[i]} onFilesChange={setFileGroup(i)} isOptional={i === 4} currentRole={currentRole} />
+                ))}
 
-            <div style={{ backgroundColor: '#F9FAFB', borderRadius: '12px', padding: '12px 16px', marginTop: '16px', border: '1px solid #E5E7EB', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: '13px', color: '#374151', fontWeight: '500' }}>Required documents uploaded</span>
-              <span style={{ fontSize: '13px', fontWeight: '700', color: allUploaded ? '#002147' : '#6B7280' }}>
-                {requiredUploadedCount} / 4
-              </span>
-            </div>
-          </div>
-        ) : (
-          <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-              <CheckCircle size={18} color="#002147" />
-              <span style={{ fontSize: '15px', fontWeight: '700', color: '#111827' }}>Preview Before Submission</span>
-            </div>
-            <p style={{ fontSize: '13px', color: '#6B7280', marginBottom: '16px' }}>
-              Please review all your details below. If anything is incorrect, use the Back button to make corrections before final submission.
-            </p>
-            <Summary f={form} isPreview={true} />
-          </div>
+                <div style={{ backgroundColor: '#F9FAFB', borderRadius: '12px', padding: '12px 16px', marginTop: '16px', border: '1px solid #E5E7EB', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '13px', color: '#374151', fontWeight: '500' }}>Required documents uploaded</span>
+                  <span style={{ fontSize: '13px', fontWeight: '700', color: allUploaded ? '#002147' : '#6B7280' }}>
+                    {requiredUploadedCount} / 4
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+                  <CheckCircle size={18} color="#002147" />
+                  <span style={{ fontSize: '15px', fontWeight: '700', color: '#111827' }}>Preview Before Submission</span>
+                </div>
+                <p style={{ fontSize: '13px', color: '#6B7280', marginBottom: '16px' }}>
+                  Please review all your details below. If anything is incorrect, use the Back button to make corrections before final submission.
+                </p>
+                <Summary f={form} isPreview={true} />
+              </div>
+            )}
+          </>
         )}
       </div>
 
       <div style={{ height: '80px' }} /> {/* Spacer for nav bar */}
       
       {/* Nav bar */}
-      <div className="nav-bar">
-        <div>
-          {section > 0 && <button className="btn-back" onClick={() => { setSection(s => s - 1); window.scrollTo(0,0); }}>← Back</button>}
-          {section === 0 && editSubmissionId && (
-            <button className="btn-back" onClick={() => { setEditSubmissionId(null); setForm(initForm()); setFiles(DOCUMENTS.map(() => [])); }}>Cancel Edit</button>
-          )}
+      {!(section === 0 && mySubmissions.length > 0 && !editSubmissionId) && (
+        <div className="nav-bar">
+          <div>
+            {section > 0 && <button className="btn-back" onClick={() => { setSection(s => s - 1); window.scrollTo(0,0); }}>← Back</button>}
+            {section === 0 && editSubmissionId && (
+              <button className="btn-back" onClick={() => { setEditSubmissionId(null); setForm(initForm()); setFiles(DOCUMENTS.map(() => [])); }}>Cancel Edit</button>
+            )}
+          </div>
+          <button
+            className="btn-next"
+            onClick={() => {
+              if (section < 6) {
+                handleProceedNext();
+              } else {
+                handleSubmit();
+              }
+            }}
+            disabled={(section === 5 && !allUploaded) || submitting}
+            style={{ opacity: ((section === 5 && !allUploaded) || submitting) ? 0.6 : 1 }}
+          >
+            {section < 6 ? 'Next →' : (submitting ? submittingText : 'Submit Record')}
+          </button>
         </div>
-        <button
-          className="btn-next"
-          onClick={() => {
-            if (section < 6) {
-              handleProceedNext();
-            } else {
-              handleSubmit();
-            }
-          }}
-          disabled={(section === 5 && !allUploaded) || submitting}
-          style={{ opacity: ((section === 5 && !allUploaded) || submitting) ? 0.6 : 1 }}
-        >
-          {section < 6 ? 'Next →' : (submitting ? submittingText : 'Submit Record')}
-        </button>
-      </div>
+      )}
       <Footer theme="light" />
 
       {passportCropFile && (

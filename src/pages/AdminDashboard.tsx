@@ -265,7 +265,7 @@ export default function AdminDashboard() {
     setEditForm({
       teacherName: sub.teacherName || '',
       staffId: sub.staffId || '',
-      category: sub.category || 'School',
+      category: sub.category || 'BASIC SCHOOL',
       circuit: sub.circuit || '',
       school: sub.school || '',
       subject: sub.subject || '',
@@ -411,7 +411,7 @@ export default function AdminDashboard() {
         const sub = targetSubmissions[i];
         if (!sub.documents || sub.documents.length === 0) continue;
         
-        const schoolFolder = sub.category === 'School' ? (sub.school || 'Unknown_School') : 'Education_Office';
+        const schoolFolder = sub.category !== 'Education Office' ? (sub.school || 'Unknown_School') : 'Education_Office';
         const safeSchoolFolder = schoolFolder.replace(/[^a-zA-Z0-9- _]/g, '');
         const safeTeacherName = `${sub.teacherName || 'Teacher'}`.replace(/[^a-zA-Z0-9- _]/g, '');
         const safeId = (sub.staffId || 'NO_ID').replace(/[^a-zA-Z0-9- _]/g, '');
@@ -699,7 +699,8 @@ export default function AdminDashboard() {
                   style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '13px', backgroundColor: '#FFF', outline: 'none' }}
                 >
                   <option value="">All Categories</option>
-                  <option value="School">School</option>
+                  <option value="BASIC SCHOOL">Basic School</option>
+                  <option value="SENIOR HIGH SCHOOL">Senior High School</option>
                   <option value="Education Office">Education Office</option>
                 </select>
               </div>
@@ -808,12 +809,12 @@ export default function AdminDashboard() {
                             </span>
                           </td>
                           <td style={{ padding: '16px 24px' }}>
-                            <span style={{ fontSize: '12px', padding: '2px 8px', borderRadius: '4px', fontWeight: '600', backgroundColor: sub.category === 'School' ? '#E0F2FE' : '#FEF3C7', color: sub.category === 'School' ? '#0369A1' : '#B45309' }}>
+                            <span style={{ fontSize: '12px', padding: '2px 8px', borderRadius: '4px', fontWeight: '600', backgroundColor: sub.category !== 'Education Office' ? '#E0F2FE' : '#FEF3C7', color: sub.category !== 'Education Office' ? '#0369A1' : '#B45309' }}>
                               {sub.category}
                             </span>
                           </td>
                           <td style={{ padding: '16px 24px', color: '#4B5563', fontSize: '13px' }}>
-                            {sub.category === 'School' ? (
+                            {sub.category !== 'Education Office' ? (
                               <div>
                                 <div style={{ fontWeight: '600', color: '#111827' }}>{sub.school}</div>
                                 <div style={{ fontSize: '11px', color: '#9CA3AF' }}>Circuit: {sub.circuit}</div>
@@ -822,7 +823,7 @@ export default function AdminDashboard() {
                               <span style={{ color: '#9CA3AF', fontStyle: 'italic' }}>GES Education Office</span>
                             )}
                           </td>
-                          <td style={{ padding: '16px 24px', color: '#4B5563' }}>{sub.category === 'School' ? sub.subject : 'N/A'}</td>
+                          <td style={{ padding: '16px 24px', color: '#4B5563' }}>{sub.category !== 'Education Office' ? sub.subject : 'N/A'}</td>
                           <td style={{ padding: '16px 24px', color: '#4B5563', fontSize: '13px' }}>{formatTimestamp(sub.submittedAt)}</td>
                           <td style={{ padding: '16px 24px' }}>
                             <span style={{ fontWeight: '600', color: sub.documents?.length === DOCUMENTS.length ? '#047857' : '#B45309' }}>
@@ -1322,7 +1323,7 @@ export default function AdminDashboard() {
 
         {/* Tab CONTENT 3: APP ANALYTICS */}
         {activeTab === 'analytics' && (() => {
-          const schoolSubs = submissions.filter((s: any) => s.category === 'School').length;
+          const schoolSubs = submissions.filter((s: any) => s.category !== 'Education Office').length;
           const officeSubs = submissions.filter((s: any) => s.category === 'Education Office').length;
           const teacherCount = users.filter((u: any) => !u.role || u.role === 'teacher').length;
           const metroCount = users.filter((u: any) => u.role === 'metro_officer').length;
@@ -1621,7 +1622,7 @@ export default function AdminDashboard() {
                   <option value="Education Office">Education Office</option>
                 </select>
               </div>
-              {editForm.category === 'School' && (
+              {editForm.category !== 'Education Office' && (
                 <>
                   <div>
                     <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#4B5563', textTransform: 'uppercase', marginBottom: '6px' }}>Circuit</label>

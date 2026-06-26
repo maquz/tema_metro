@@ -3,12 +3,14 @@ import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { Link } from 'react-router-dom';
-import { Lock, Mail, Key } from 'lucide-react';
+import { Lock, Mail, Key, Eye, EyeOff } from 'lucide-react';
 import Footer from '../components/Footer';
 
 export default function Signup() {
+  const [selectedRole, setSelectedRole] = useState<'teacher' | 'admin'>('teacher');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [secretCode, setSecretCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -21,7 +23,7 @@ export default function Signup() {
     
     // Determine role
     let role = 'teacher';
-    if (secretCode) {
+    if (selectedRole === 'admin') {
       if (secretCode === '436') {
         role = 'admin';
       } else if (secretCode === 'TEMA_EDITOR_2026') {
@@ -53,7 +55,11 @@ export default function Signup() {
       }
     } catch (err: any) {
       console.error(err);
-      setError('Failed to sign up. Check if the email is valid and password is > 6 chars.');
+      if (err.code === 'auth/email-already-in-use') {
+        setError('This email is already registered. Please log in instead.');
+      } else {
+        setError('Failed to sign up. Check if the email is valid and password is > 6 chars.');
+      }
     }
     setLoading(false);
   };
@@ -118,6 +124,23 @@ export default function Signup() {
           )}
 
           <form onSubmit={handleSignup}>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', background: 'rgba(0,0,0,0.3)', borderRadius: '12px', padding: '6px' }}>
+              <button
+                type="button"
+                onClick={() => { setSelectedRole('teacher'); setSecretCode(''); setError(''); }}
+                style={{ flex: 1, padding: '10px 6px', borderRadius: '8px', border: selectedRole === 'teacher' ? '1.5px solid rgba(255,255,255,0.4)' : '1.5px solid transparent', backgroundColor: selectedRole === 'teacher' ? 'rgba(255,255,255,0.1)' : 'transparent', color: selectedRole === 'teacher' ? '#FFF' : 'rgba(255,255,255,0.4)', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', cursor: 'pointer', transition: 'all 0.2s' }}
+              >
+                Teacher
+              </button>
+              <button
+                type="button"
+                onClick={() => { setSelectedRole('admin'); setError(''); }}
+                style={{ flex: 1, padding: '10px 6px', borderRadius: '8px', border: selectedRole === 'admin' ? '1.5px solid rgba(255,255,255,0.4)' : '1.5px solid transparent', backgroundColor: selectedRole === 'admin' ? 'rgba(255,255,255,0.1)' : 'transparent', color: selectedRole === 'admin' ? '#FFF' : 'rgba(255,255,255,0.4)', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', cursor: 'pointer', transition: 'all 0.2s' }}
+              >
+                Admin / Metro
+              </button>
+            </div>
+
             <div style={{ marginBottom: '16px' }}>
               <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'rgba(255,255,255,0.5)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Email</label>
               <div style={{ position: 'relative' }}>
@@ -131,20 +154,25 @@ export default function Signup() {
               <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'rgba(255,255,255,0.5)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Password</label>
               <div style={{ position: 'relative' }}>
                 <Lock size={16} color="rgba(255,255,255,0.3)" style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
-                <input type="password" value={password} onChange={e => setPassword(e.target.value)} required
-                  style={{ width: '100%', padding: '13px 14px 13px 42px', borderRadius: '10px', border: '1.5px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.05)', fontSize: '14px', color: '#FFFFFF', outline: 'none', boxSizing: 'border-box' }}
+                <input type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} required
+                  style={{ width: '100%', padding: '13px 40px 13px 42px', borderRadius: '10px', border: '1.5px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.05)', fontSize: '14px', color: '#FFFFFF', outline: 'none', boxSizing: 'border-box' }}
                   placeholder="Min 6 characters" />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {showPassword ? <EyeOff size={16} color="rgba(255,255,255,0.4)" /> : <Eye size={16} color="rgba(255,255,255,0.4)" />}
+                </button>
               </div>
             </div>
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'rgba(255,255,255,0.5)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Admin / Metro Secret Code <span style={{ color: 'rgba(255,255,255,0.25)', fontWeight: '500' }}>(Optional)</span></label>
-              <div style={{ position: 'relative' }}>
-                <Key size={16} color="rgba(255,255,255,0.3)" style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
-                <input type="text" value={secretCode} onChange={e => setSecretCode(e.target.value)}
-                  style={{ width: '100%', padding: '13px 14px 13px 42px', borderRadius: '10px', border: '1.5px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.05)', fontSize: '14px', color: '#FFFFFF', outline: 'none', boxSizing: 'border-box' }}
-                  placeholder="Leave blank if you are a teacher" />
+            {selectedRole === 'admin' && (
+              <div style={{ marginBottom: '24px' }}>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'rgba(255,255,255,0.5)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Admin / Metro Secret Code</label>
+                <div style={{ position: 'relative' }}>
+                  <Key size={16} color="rgba(255,255,255,0.3)" style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
+                  <input type="text" value={secretCode} onChange={e => setSecretCode(e.target.value)} required={selectedRole === 'admin'}
+                    style={{ width: '100%', padding: '13px 14px 13px 42px', borderRadius: '10px', border: '1.5px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.05)', fontSize: '14px', color: '#FFFFFF', outline: 'none', boxSizing: 'border-box' }}
+                    placeholder="Enter Admin code" />
+                </div>
               </div>
-            </div>
+            )}
             <button disabled={loading}
               style={{ width: '100%', padding: '14px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #002147, #001530)', color: '#FFFFFF', fontSize: '15px', fontWeight: '700', cursor: loading ? 'not-allowed' : 'pointer' }}
             >

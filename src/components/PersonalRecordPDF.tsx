@@ -249,7 +249,7 @@ export const PersonalRecordPDF = forwardRef<HTMLDivElement, { f: any }>(({ f }, 
           </div>
         </div>
         <div style={{ marginTop: '10px' }}>
-          Date <span style={{ display: 'inline-block', width: '150px', borderBottom: '1px dotted black' }}></span> 20<span style={{ display: 'inline-block', width: '50px', borderBottom: '1px dotted black' }}></span>
+          Date: <strong style={{ display: 'inline-block', minWidth: '150px', borderBottom: '1px dotted black' }}>{f.certificationDate || ''}</strong>
         </div>
       </div>
     </div>
