@@ -499,7 +499,7 @@ export default function AdminDashboard() {
     if (!window.confirm(`Are you sure you want to delete all older duplicates? This action cannot be undone.`)) return;
     setCleaningDuplicates(true);
     try {
-      let deleted: any[] = [];
+      const deleted: any[] = [];
       for (const group of duplicateGroups) {
         for (const docObj of group.duplicates) {
           await deleteDoc(doc(db, 'submissions', docObj.id));

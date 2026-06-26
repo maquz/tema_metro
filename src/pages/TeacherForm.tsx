@@ -777,7 +777,8 @@ export default function TeacherForm() {
 
       try {
         if (editSubmissionId) {
-          const { photoUrl: _photo, ...formWithoutPhoto } = form;
+          const formWithoutPhoto = { ...form };
+          delete formWithoutPhoto.photoUrl;
           await updateDoc(doc(db, 'submissions', editSubmissionId), {
             ...formWithoutPhoto,
             status: form.status || 'submitted',
@@ -793,7 +794,8 @@ export default function TeacherForm() {
           });
           if (existingDoc) {
             const existingId = existingDoc.id;
-            const { photoUrl: _photo, ...formWithoutPhoto } = form;
+            const formWithoutPhoto = { ...form };
+            delete formWithoutPhoto.photoUrl;
             await updateDoc(doc(db, 'submissions', existingId), {
               ...formWithoutPhoto,
               status: form.status || 'submitted',
@@ -801,7 +803,8 @@ export default function TeacherForm() {
             });
             setEditSubmissionId(existingId);
           } else {
-            const { photoUrl: _photo2, ...formWithoutPhoto } = form;
+            const formWithoutPhoto = { ...form };
+            delete formWithoutPhoto.photoUrl;
             const docRef = await addDoc(collection(db, 'submissions'), {
               ...formWithoutPhoto,
               status: 'draft',
