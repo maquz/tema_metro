@@ -36,6 +36,7 @@ interface FormState {
   // Personal
   firstName: string; otherNames: string; surname: string;
   teacherName: string; // The combined name to keep admin dashboard working
+  currentRank: string;
   designation: string; sex: string; regNo: string; staffId: string;
   dob: string; nationality: string; hometown: string;
   address: string; mobile: string; email: string; ssfNo: string;
@@ -67,7 +68,7 @@ interface FormState {
 const initForm = (): FormState => ({
   status: 'draft',
   category: '', circuit: '', school: '',
-  firstName: '', otherNames: '', surname: '', teacherName: '',
+  firstName: '', otherNames: '', surname: '', teacherName: '', currentRank: '',
   designation: '', sex: '', regNo: '', staffId: '',
   dob: '', nationality: '', hometown: '',
   address: '', mobile: '', email: '', ssfNo: '',
@@ -202,7 +203,13 @@ function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, error
             {errors.circuit && f.category !== 'SENIOR HIGH SCHOOL' && <p style={{ color: '#CE1126', fontSize: '12px', margin: '-12px 0 12px' }}>{errors.circuit}</p>}
             {errors.school && <p style={{ color: '#CE1126', fontSize: '12px', margin: '-12px 0 12px' }}>{errors.school}</p>}
             <div className="form-row cols-1">
-              <Field label="Subject Taught" required><Sel value={f.subject} onChange={upd('subject')} options={SUBJECTS} /></Field>
+              <Field label={f.category === 'SENIOR HIGH SCHOOL' ? 'Department Field' : 'Subject Taught'} required>
+                <Sel 
+                  value={f.subject} 
+                  onChange={upd('subject')} 
+                  options={f.category === 'SENIOR HIGH SCHOOL' ? ['SCIENCE', 'GENERAL ARTS', 'BUSINESS', 'AGRICULTURAL SCIENCE', 'VOCATIONAL', 'ICT', 'VISUAL ARTS', 'ADMINISTRATION'] : SUBJECTS} 
+                />
+              </Field>
             </div>
             {errors.subject && <p style={{ color: '#CE1126', fontSize: '12px', margin: '-12px 0 12px' }}>{errors.subject}</p>}
           </>
@@ -239,6 +246,9 @@ function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, error
         <div className="form-row cols-2">
           <Field label="Reg. No."><Inp value={f.regNo} onChange={upd('regNo')} placeholder="Reg. No." /></Field>
           <Field label="Staff ID"><Inp value={f.staffId} onChange={() => {}} placeholder="Auto-filled from Registration" disabled /></Field>
+        </div>
+        <div className="form-row cols-1">
+          <Field label="Current Rank" required><Sel value={f.currentRank} onChange={upd('currentRank')} options={['Director II', 'Deputy Director', 'Assistant Director I', 'Assistant Director II', 'Principal Superintendent', 'Senior Superintendent I', 'Senior Superintendent II', 'Superintendent I', 'Superintendent II', 'Pupil Teacher']} /></Field>
         </div>
         <div className="form-row cols-2">
           <Field label="Date of Birth" required><Inp value={f.dob} onChange={upd('dob')} type="date" /></Field>

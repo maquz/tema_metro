@@ -163,6 +163,7 @@ export default function AdminDashboard() {
   const [newSchool, setNewSchool] = useState({ circuit: '', school: '' });
   const [editSchoolId, setEditSchoolId] = useState<string | null>(null);
   const [editSchoolData, setEditSchoolData] = useState({ circuit: '', school: '' });
+  const [bulkStaffIds, setBulkStaffIds] = useState('');
 
   // Real-time Firestore Listeners
   useEffect(() => {
@@ -607,7 +608,7 @@ export default function AdminDashboard() {
       )}
 
       {/* Top Banner Header */}
-      <header style={{ background: '#002147', color: '#FFFFFF', padding: '12px 24px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 50 }}>
+      <header style={{ position: 'sticky', top: 0, background: '#002147', color: '#FFFFFF', padding: '12px 24px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 50 }}>
         {/* Left: Hamburger + Logo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{ background: 'none', border: 'none', color: '#FFF', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '4px' }} onMouseOver={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'} onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}>
@@ -735,6 +736,47 @@ export default function AdminDashboard() {
           {/* Tab CONTENT 1: SUBMISSIONS MONITOR */}
           {activeTab === 'submissions' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              
+              {/* Action Buttons Container */}
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <button
+                  onClick={handleExportCSV}
+                  disabled={filteredSubmissions.length === 0}
+                  style={{ padding: '11px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#CE1126', color: '#FFFFFF', fontSize: '13px', fontWeight: '700', cursor: filteredSubmissions.length === 0 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'all 0.2s', opacity: filteredSubmissions.length === 0 ? 0.6 : 1 }}
+                >
+                  <Download size={14} /> Export CSV
+                </button>
+                <button
+                  onClick={handleDownloadSelectedSubmissions}
+                  disabled={selectedSubs.size === 0 || bulkDownloading}
+                  style={{ padding: '11px 16px', borderRadius: '8px', border: '1.5px solid #002147', backgroundColor: '#F0F4F8', color: '#002147', fontSize: '13px', fontWeight: '700', cursor: (selectedSubs.size === 0 || bulkDownloading) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'all 0.2s', opacity: (selectedSubs.size === 0 || bulkDownloading) ? 0.6 : 1 }}
+                >
+                  <FolderDown size={14} /> 
+                  {bulkDownloading && bulkZipProgress 
+                    ? `Part ${bulkZipProgress.batch}/${bulkZipProgress.totalBatches} (${bulkZipProgress.current}/${bulkZipProgress.total})...` 
+                    : `Download Selected (${selectedSubs.size})`}
+                </button>
+                <button
+                  onClick={handleDownloadAllSubmissions}
+                  disabled={filteredSubmissions.length === 0 || bulkDownloading}
+                  style={{ padding: '11px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#002147', color: '#FFFFFF', fontSize: '13px', fontWeight: '700', cursor: (filteredSubmissions.length === 0 || bulkDownloading) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'all 0.2s', opacity: (filteredSubmissions.length === 0 || bulkDownloading) ? 0.6 : 1 }}
+                >
+                  <FolderDown size={14} /> 
+                  {bulkDownloading && bulkZipProgress 
+                    ? `Part ${bulkZipProgress.batch}/${bulkZipProgress.totalBatches} (${bulkZipProgress.current}/${bulkZipProgress.total})...` 
+                    : 'Download All (ZIP)'}
+                </button>
+                {role === 'admin' && (
+                  <button
+                    onClick={handleCleanDuplicates}
+                    disabled={cleaningDuplicates}
+                    style={{ padding: '11px 16px', borderRadius: '8px', border: '1.5px solid #D97706', backgroundColor: '#FEF3C7', color: '#B45309', fontSize: '13px', fontWeight: '700', cursor: cleaningDuplicates ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'all 0.2s', opacity: cleaningDuplicates ? 0.6 : 1 }}
+                  >
+                    <Activity size={14} /> {cleaningDuplicates ? 'Cleaning...' : 'Clean Duplicates'}
+                  </button>
+                )}
+              </div>
+
               {/* Filter Bar */}
               <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '20px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', alignItems: 'end' }}>
 
@@ -782,45 +824,6 @@ export default function AdminDashboard() {
                   onChange={e => setEndDate(e.target.value)} 
                   style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '13px', outline: 'none' }}
                 />
-              </div>
-
-              <div style={{ display: 'flex', gap: '8px', flexDirection: 'column' }}>
-                <button
-                  onClick={handleExportCSV}
-                  disabled={filteredSubmissions.length === 0}
-                  style={{ width: '100%', padding: '11px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#CE1126', color: '#FFFFFF', fontSize: '13px', fontWeight: '700', cursor: filteredSubmissions.length === 0 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'all 0.2s', opacity: filteredSubmissions.length === 0 ? 0.6 : 1 }}
-                >
-                  <Download size={14} /> Export CSV
-                </button>
-                <button
-                  onClick={handleDownloadSelectedSubmissions}
-                  disabled={selectedSubs.size === 0 || bulkDownloading}
-                  style={{ width: '100%', padding: '11px 16px', borderRadius: '8px', border: '1.5px solid #002147', backgroundColor: '#F0F4F8', color: '#002147', fontSize: '13px', fontWeight: '700', cursor: (selectedSubs.size === 0 || bulkDownloading) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'all 0.2s', opacity: (selectedSubs.size === 0 || bulkDownloading) ? 0.6 : 1 }}
-                >
-                  <FolderDown size={14} /> 
-                  {bulkDownloading && bulkZipProgress 
-                    ? `Part ${bulkZipProgress.batch}/${bulkZipProgress.totalBatches} (${bulkZipProgress.current}/${bulkZipProgress.total})...` 
-                    : `Download Selected (${selectedSubs.size})`}
-                </button>
-                <button
-                  onClick={handleDownloadAllSubmissions}
-                  disabled={filteredSubmissions.length === 0 || bulkDownloading}
-                  style={{ width: '100%', padding: '11px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#002147', color: '#FFFFFF', fontSize: '13px', fontWeight: '700', cursor: (filteredSubmissions.length === 0 || bulkDownloading) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'all 0.2s', opacity: (filteredSubmissions.length === 0 || bulkDownloading) ? 0.6 : 1 }}
-                >
-                  <FolderDown size={14} /> 
-                  {bulkDownloading && bulkZipProgress 
-                    ? `Part ${bulkZipProgress.batch}/${bulkZipProgress.totalBatches} (${bulkZipProgress.current}/${bulkZipProgress.total})...` 
-                    : 'Download All (ZIP)'}
-                </button>
-                {role === 'admin' && (
-                  <button
-                    onClick={handleCleanDuplicates}
-                    disabled={cleaningDuplicates}
-                    style={{ width: '100%', padding: '11px 16px', borderRadius: '8px', border: '1.5px solid #D97706', backgroundColor: '#FEF3C7', color: '#B45309', fontSize: '13px', fontWeight: '700', cursor: cleaningDuplicates ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'all 0.2s', opacity: cleaningDuplicates ? 0.6 : 1 }}
-                  >
-                    <Activity size={14} /> {cleaningDuplicates ? 'Cleaning...' : 'Clean Duplicates'}
-                  </button>
-                )}
               </div>
             </div>
 
@@ -1244,9 +1247,42 @@ export default function AdminDashboard() {
             {/* Bulk Download Staff Data */}
             <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
               <h4 style={{ fontSize: '14px', fontWeight: '700', color: '#111827', margin: '0 0 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <FolderDown size={16} /> Bulk Download Staff Data
+                <FolderDown size={16} /> Bulk Select & Download
               </h4>
               <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+
+                {/* Bulk Select by Staff IDs */}
+                <div style={{ flex: '1 1 100%', backgroundColor: '#F9FAFB', padding: '16px', borderRadius: '12px', border: '1px solid #E5E7EB', marginBottom: '8px' }}>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#4B5563', textTransform: 'uppercase', marginBottom: '8px' }}>Bulk Select by Staff IDs</label>
+                  <p style={{ fontSize: '12px', color: '#6B7280', margin: '0 0 8px 0' }}>Paste a list of Staff IDs (separated by commas or new lines) to automatically select their records for download.</p>
+                  <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                    <textarea 
+                      value={bulkStaffIds}
+                      onChange={e => setBulkStaffIds(e.target.value)}
+                      placeholder="e.g. GES/1234, GES/5678..."
+                      style={{ flex: 1, padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '13px', outline: 'none', backgroundColor: '#FFF', minHeight: '80px', fontFamily: 'monospace' }}
+                    />
+                    <button
+                      onClick={() => {
+                        if (!bulkStaffIds.trim()) return alert('Please enter at least one Staff ID.');
+                        const idsToSearch = bulkStaffIds.split(/[\n,]+/).map(id => id.trim().toUpperCase()).filter(id => id);
+                        const matchedSubs = submissions.filter(s => idsToSearch.includes(s.staffId?.toUpperCase()));
+                        if (matchedSubs.length === 0) return alert('No matching records found.');
+                        
+                        const newSelected = new Set(selectedSubs);
+                        matchedSubs.forEach(s => newSelected.add(s.id));
+                        setSelectedSubs(newSelected);
+                        
+                        alert(`Successfully selected ${matchedSubs.length} records.`);
+                        setBulkStaffIds('');
+                        setActiveTab('submissions');
+                      }}
+                      style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#10B981', color: '#FFF', fontSize: '13px', fontWeight: '600', cursor: 'pointer', height: 'fit-content', whiteSpace: 'nowrap' }}
+                    >
+                      <Search size={14} style={{ display: 'inline', verticalAlign: 'text-bottom', marginRight: '4px' }} /> Search & Select
+                    </button>
+                  </div>
+                </div>
                 
                 {/* Download by Circuit */}
                 <div style={{ flex: '1 1 300px', backgroundColor: '#F9FAFB', padding: '16px', borderRadius: '12px', border: '1px solid #E5E7EB' }}>

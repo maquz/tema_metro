@@ -58,7 +58,10 @@ export const PersonalRecordPDF = forwardRef<HTMLDivElement, { f: any }>(({ f }, 
         </div>
         <div style={{ display: 'flex' }}>
           <div style={{ flex: 2 }}>Designation Dr, Rev, Mr, Mrs, Miss: <strong style={{ borderBottom: '1px dotted black', display: 'inline-block', width: '40%' }}>{f.designation || ''}</strong></div>
-          <div style={{ flex: 1 }}>Sex: <strong style={{ borderBottom: '1px dotted black', display: 'inline-block', width: '60%' }}>{f.sex || ''}</strong></div>
+          <div style={{ flex: 2 }}>Current Rank: <strong style={{ borderBottom: '1px dotted black', display: 'inline-block', width: '50%' }}>{f.currentRank || ''}</strong></div>
+          <div style={{ flex: 1 }}>Sex: <strong style={{ borderBottom: '1px dotted black', display: 'inline-block', width: '50%' }}>{f.sex || ''}</strong></div>
+        </div>
+        <div style={{ display: 'flex' }}>
           <div style={{ flex: 1 }}>Reg. No.: <strong style={{ borderBottom: '1px dotted black', display: 'inline-block', width: '50%' }}>{f.regNo || ''}</strong></div>
           <div style={{ flex: 1 }}>Staff ID: <strong style={{ borderBottom: '1px dotted black', display: 'inline-block', width: '50%' }}>{f.staffId || ''}</strong></div>
         </div>
@@ -184,7 +187,10 @@ export const PersonalRecordPDF = forwardRef<HTMLDivElement, { f: any }>(({ f }, 
 
       <div style={{ marginTop: '15px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
         <div>ADDRESS OF PRESENT STATION: <strong style={{ borderBottom: '1px dotted black', display: 'inline-block', width: '70%' }}>{f.school || ''}</strong></div>
-        <div>PRESENT SS SALARY Level: <strong style={{ borderBottom: '1px dotted black', display: 'inline-block', width: '30%' }}>{f.presentSalaryLevel || ''}</strong> step: <strong style={{ borderBottom: '1px dotted black', display: 'inline-block', width: '30%' }}>{f.presentSalaryStep || ''}</strong></div>
+        <div style={{ display: 'flex' }}>
+          <div style={{ flex: 1 }}>PRESENT SS SALARY Level: <strong style={{ borderBottom: '1px dotted black', display: 'inline-block', width: '30%' }}>{f.presentSalaryLevel || ''}</strong> step: <strong style={{ borderBottom: '1px dotted black', display: 'inline-block', width: '30%' }}>{f.presentSalaryStep || ''}</strong></div>
+          <div style={{ flex: 1 }}>{f.category === 'SENIOR HIGH SCHOOL' ? 'DEPARTMENT FIELD' : 'SUBJECT TAUGHT'}: <strong style={{ borderBottom: '1px dotted black', display: 'inline-block', width: '50%' }}>{f.subject || ''}</strong></div>
+        </div>
       </div>
 
       <div style={{ marginTop: '15px' }}>
