@@ -109,7 +109,7 @@ const createCombinedPDF = async (sub: any): Promise<Uint8Array | null> => {
 
 export default function AdminDashboard() {
   const { user, role, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState<'submissions' | 'users' | 'analytics' | 'schools'>('submissions');
+  const [activeTab, setActiveTab] = useState<'submissions' | 'users' | 'analytics' | 'schools' | 'bulk-download'>('submissions');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   
   // Data States
@@ -164,6 +164,8 @@ export default function AdminDashboard() {
   const [editSchoolId, setEditSchoolId] = useState<string | null>(null);
   const [editSchoolData, setEditSchoolData] = useState({ circuit: '', school: '' });
   const [bulkStaffIds, setBulkStaffIds] = useState('');
+  const [bulkNames, setBulkNames] = useState('');
+  const [bulkMatchedSubs, setBulkMatchedSubs] = useState<any[]>([]);
 
   // Real-time Firestore Listeners
   useEffect(() => {
@@ -704,10 +706,16 @@ export default function AdminDashboard() {
               <BarChart3 size={18} color={activeTab === 'analytics' ? '#002147' : '#9CA3AF'} /> Analytics
             </button>
             <button
-              onClick={() => setActiveTab('schools')}
+              onClick={() => { setActiveTab('schools'); setSidebarOpen(false); }}
               style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 16px', borderRadius: '8px', border: 'none', backgroundColor: activeTab === 'schools' ? '#F3F4F6' : 'transparent', color: activeTab === 'schools' ? '#002147' : '#4B5563', fontWeight: activeTab === 'schools' ? '700' : '600', fontSize: '14px', cursor: 'pointer', transition: 'all 0.2s', textAlign: 'left', width: '100%' }}
             >
               <Building2 size={18} color={activeTab === 'schools' ? '#002147' : '#9CA3AF'} /> Schools
+            </button>
+            <button
+              onClick={() => { setActiveTab('bulk-download'); setSidebarOpen(false); }}
+              style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 16px', borderRadius: '8px', border: 'none', backgroundColor: activeTab === 'bulk-download' ? '#F3F4F6' : 'transparent', color: activeTab === 'bulk-download' ? '#002147' : '#4B5563', fontWeight: activeTab === 'bulk-download' ? '700' : '600', fontSize: '14px', cursor: 'pointer', transition: 'all 0.2s', textAlign: 'left', width: '100%' }}
+            >
+              <FolderDown size={18} color={activeTab === 'bulk-download' ? '#002147' : '#9CA3AF'} /> Bulk Select & Download
             </button>
           </div>
         </aside>
@@ -1244,94 +1252,6 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            {/* Bulk Download Staff Data */}
-            <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
-              <h4 style={{ fontSize: '14px', fontWeight: '700', color: '#111827', margin: '0 0 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <FolderDown size={16} /> Bulk Select & Download
-              </h4>
-              <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-
-                {/* Bulk Select by Staff IDs */}
-                <div style={{ flex: '1 1 100%', backgroundColor: '#F9FAFB', padding: '16px', borderRadius: '12px', border: '1px solid #E5E7EB', marginBottom: '8px' }}>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#4B5563', textTransform: 'uppercase', marginBottom: '8px' }}>Bulk Select by Staff IDs</label>
-                  <p style={{ fontSize: '12px', color: '#6B7280', margin: '0 0 8px 0' }}>Paste a list of Staff IDs (separated by commas or new lines) to automatically select their records for download.</p>
-                  <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                    <textarea 
-                      value={bulkStaffIds}
-                      onChange={e => setBulkStaffIds(e.target.value)}
-                      placeholder="e.g. GES/1234, GES/5678..."
-                      style={{ flex: 1, padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '13px', outline: 'none', backgroundColor: '#FFF', minHeight: '80px', fontFamily: 'monospace' }}
-                    />
-                    <button
-                      onClick={() => {
-                        if (!bulkStaffIds.trim()) return alert('Please enter at least one Staff ID.');
-                        const idsToSearch = bulkStaffIds.split(/[\n,]+/).map(id => id.trim().toUpperCase()).filter(id => id);
-                        const matchedSubs = submissions.filter(s => idsToSearch.includes(s.staffId?.toUpperCase()));
-                        if (matchedSubs.length === 0) return alert('No matching records found.');
-                        
-                        const newSelected = new Set(selectedSubs);
-                        matchedSubs.forEach(s => newSelected.add(s.id));
-                        setSelectedSubs(newSelected);
-                        
-                        alert(`Successfully selected ${matchedSubs.length} records.`);
-                        setBulkStaffIds('');
-                        setActiveTab('submissions');
-                      }}
-                      style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#10B981', color: '#FFF', fontSize: '13px', fontWeight: '600', cursor: 'pointer', height: 'fit-content', whiteSpace: 'nowrap' }}
-                    >
-                      <Search size={14} style={{ display: 'inline', verticalAlign: 'text-bottom', marginRight: '4px' }} /> Search & Select
-                    </button>
-                  </div>
-                </div>
-                
-                {/* Download by Circuit */}
-                <div style={{ flex: '1 1 300px', backgroundColor: '#F9FAFB', padding: '16px', borderRadius: '12px', border: '1px solid #E5E7EB' }}>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#4B5563', textTransform: 'uppercase', marginBottom: '8px' }}>Download by Circuit</label>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <select
-                      value={downloadCircuit}
-                      onChange={e => setDownloadCircuit(e.target.value)}
-                      style={{ flex: 1, padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '13px', outline: 'none', backgroundColor: '#FFF' }}
-                    >
-                      <option value="">-- Select Circuit --</option>
-                      {displayCircuits.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                    <button
-                      onClick={handleBulkDownloadByCircuit}
-                      disabled={!downloadCircuit || bulkDownloading}
-                      style={{ padding: '0 16px', borderRadius: '8px', border: 'none', backgroundColor: '#002147', color: '#FFF', fontSize: '13px', fontWeight: '600', cursor: (!downloadCircuit || bulkDownloading) ? 'not-allowed' : 'pointer', opacity: (!downloadCircuit || bulkDownloading) ? 0.6 : 1 }}
-                    >
-                      Download ZIP
-                    </button>
-                  </div>
-                </div>
-
-                {/* Download by School */}
-                <div style={{ flex: '1 1 300px', backgroundColor: '#F9FAFB', padding: '16px', borderRadius: '12px', border: '1px solid #E5E7EB' }}>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#4B5563', textTransform: 'uppercase', marginBottom: '8px' }}>Download by School</label>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <select
-                      value={downloadSchool}
-                      onChange={e => setDownloadSchool(e.target.value)}
-                      style={{ flex: 1, padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '13px', outline: 'none', backgroundColor: '#FFF' }}
-                    >
-                      <option value="">-- Select School --</option>
-                      {schoolsData.slice().sort((a, b) => a.school.localeCompare(b.school)).map((s: any) => (
-                        <option key={s.id} value={s.school}>{s.school}</option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={handleBulkDownloadBySchool}
-                      disabled={!downloadSchool || bulkDownloading}
-                      style={{ padding: '0 16px', borderRadius: '8px', border: 'none', backgroundColor: '#002147', color: '#FFF', fontSize: '13px', fontWeight: '600', cursor: (!downloadSchool || bulkDownloading) ? 'not-allowed' : 'pointer', opacity: (!downloadSchool || bulkDownloading) ? 0.6 : 1 }}
-                    >
-                      Download ZIP
-                    </button>
-                  </div>
-                </div>
-
-              </div>
-            </div>
 
             {/* Existing Schools List */}
             <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
@@ -1438,6 +1358,186 @@ export default function AdminDashboard() {
                   </tbody>
                 </table>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab CONTENT: BULK DOWNLOAD */}
+        {activeTab === 'bulk-download' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            {/* Search Controls */}
+            <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
+              <h4 style={{ fontSize: '14px', fontWeight: '700', color: '#111827', margin: '0 0 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FolderDown size={16} /> Bulk Select & Download
+              </h4>
+              <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                
+                {/* Bulk Select by Staff IDs */}
+                <div style={{ flex: '1 1 45%', backgroundColor: '#F9FAFB', padding: '16px', borderRadius: '12px', border: '1px solid #E5E7EB', marginBottom: '8px' }}>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#4B5563', textTransform: 'uppercase', marginBottom: '8px' }}>Bulk Search by Staff IDs</label>
+                  <p style={{ fontSize: '12px', color: '#6B7280', margin: '0 0 8px 0' }}>Paste a list of Staff IDs (separated by commas or new lines) to search for records.</p>
+                  <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                    <textarea 
+                      value={bulkStaffIds}
+                      onChange={e => setBulkStaffIds(e.target.value)}
+                      placeholder="e.g. GES/1234, GES/5678..."
+                      style={{ flex: 1, padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '13px', outline: 'none', backgroundColor: '#FFF', minHeight: '80px', fontFamily: 'monospace' }}
+                    />
+                    <button
+                      onClick={() => {
+                        if (!bulkStaffIds.trim()) return alert('Please enter at least one Staff ID.');
+                        const idsToSearch = bulkStaffIds.split(/[\n,]+/).map(id => id.trim().toUpperCase()).filter(id => id);
+                        const matchedSubs = submissions.filter(s => idsToSearch.includes(s.staffId?.toUpperCase()));
+                        if (matchedSubs.length === 0) return alert('No matching records found.');
+                        setBulkMatchedSubs(matchedSubs);
+                        alert(`Found ${matchedSubs.length} matching records by Staff ID.`);
+                        setBulkStaffIds('');
+                      }}
+                      style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#10B981', color: '#FFF', fontSize: '13px', fontWeight: '600', cursor: 'pointer', height: 'fit-content', whiteSpace: 'nowrap' }}
+                    >
+                      <Search size={14} style={{ display: 'inline', verticalAlign: 'text-bottom', marginRight: '4px' }} /> Search
+                    </button>
+                  </div>
+                </div>
+
+                {/* Bulk Select by Names */}
+                <div style={{ flex: '1 1 45%', backgroundColor: '#F9FAFB', padding: '16px', borderRadius: '12px', border: '1px solid #E5E7EB', marginBottom: '8px' }}>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#4B5563', textTransform: 'uppercase', marginBottom: '8px' }}>Bulk Search by Names</label>
+                  <p style={{ fontSize: '12px', color: '#6B7280', margin: '0 0 8px 0' }}>Paste a list of Names (separated by commas or new lines) to search for records.</p>
+                  <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                    <textarea 
+                      value={bulkNames}
+                      onChange={e => setBulkNames(e.target.value)}
+                      placeholder="e.g. John Doe, Jane Smith..."
+                      style={{ flex: 1, padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '13px', outline: 'none', backgroundColor: '#FFF', minHeight: '80px', fontFamily: 'monospace' }}
+                    />
+                    <button
+                      onClick={() => {
+                        if (!bulkNames.trim()) return alert('Please enter at least one name.');
+                        const namesToSearch = bulkNames.split(/[\n,]+/).map(name => name.trim().toLowerCase()).filter(name => name);
+                        const matchedSubs = submissions.filter(s => {
+                          const fullName = (s.teacherName || `${s.firstName || ''} ${s.otherNames || ''} ${s.surname || ''}`).toLowerCase();
+                          return namesToSearch.some(searchName => fullName.includes(searchName));
+                        });
+                        if (matchedSubs.length === 0) return alert('No matching records found.');
+                        setBulkMatchedSubs(matchedSubs);
+                        alert(`Found ${matchedSubs.length} matching records by Name.`);
+                        setBulkNames('');
+                      }}
+                      style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#10B981', color: '#FFF', fontSize: '13px', fontWeight: '600', cursor: 'pointer', height: 'fit-content', whiteSpace: 'nowrap' }}
+                    >
+                      <Search size={14} style={{ display: 'inline', verticalAlign: 'text-bottom', marginRight: '4px' }} /> Search
+                    </button>
+                  </div>
+                </div>
+
+                {/* Download by Circuit */}
+                <div style={{ flex: '1 1 300px', backgroundColor: '#F9FAFB', padding: '16px', borderRadius: '12px', border: '1px solid #E5E7EB' }}>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#4B5563', textTransform: 'uppercase', marginBottom: '8px' }}>Download by Circuit</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <select
+                      value={downloadCircuit}
+                      onChange={e => setDownloadCircuit(e.target.value)}
+                      style={{ flex: 1, padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '13px', outline: 'none', backgroundColor: '#FFF' }}
+                    >
+                      <option value="">-- Select Circuit --</option>
+                      {displayCircuits.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <button
+                      onClick={handleBulkDownloadByCircuit}
+                      disabled={!downloadCircuit || bulkDownloading}
+                      style={{ padding: '0 16px', borderRadius: '8px', border: 'none', backgroundColor: '#002147', color: '#FFF', fontSize: '13px', fontWeight: '600', cursor: (!downloadCircuit || bulkDownloading) ? 'not-allowed' : 'pointer', opacity: (!downloadCircuit || bulkDownloading) ? 0.6 : 1 }}
+                    >
+                      Download ZIP
+                    </button>
+                  </div>
+                </div>
+
+                {/* Download by School */}
+                <div style={{ flex: '1 1 300px', backgroundColor: '#F9FAFB', padding: '16px', borderRadius: '12px', border: '1px solid #E5E7EB' }}>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#4B5563', textTransform: 'uppercase', marginBottom: '8px' }}>Download by School</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <select
+                      value={downloadSchool}
+                      onChange={e => setDownloadSchool(e.target.value)}
+                      style={{ flex: 1, padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '13px', outline: 'none', backgroundColor: '#FFF' }}
+                    >
+                      <option value="">-- Select School --</option>
+                      {schoolsData.slice().sort((a, b) => a.school.localeCompare(b.school)).map((s: any) => (
+                        <option key={s.id} value={s.school}>{s.school}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={handleBulkDownloadBySchool}
+                      disabled={!downloadSchool || bulkDownloading}
+                      style={{ padding: '0 16px', borderRadius: '8px', border: 'none', backgroundColor: '#002147', color: '#FFF', fontSize: '13px', fontWeight: '600', cursor: (!downloadSchool || bulkDownloading) ? 'not-allowed' : 'pointer', opacity: (!downloadSchool || bulkDownloading) ? 0.6 : 1 }}
+                    >
+                      Download ZIP
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            {/* Temporal Table for Search Results */}
+            <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)', overflow: 'hidden' }}>
+              <div style={{ padding: '20px 24px', borderBottom: '1px solid #E5E7EB', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#002147', margin: 0 }}>Search Results ({bulkMatchedSubs.length})</h3>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button
+                    onClick={() => setBulkMatchedSubs([])}
+                    disabled={bulkMatchedSubs.length === 0}
+                    style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #D1D5DB', backgroundColor: '#FFF', color: '#4B5563', fontSize: '13px', fontWeight: '600', cursor: bulkMatchedSubs.length === 0 ? 'not-allowed' : 'pointer', opacity: bulkMatchedSubs.length === 0 ? 0.5 : 1 }}
+                  >
+                    Clear Results
+                  </button>
+                  <button
+                    onClick={() => {
+                      const newSelected = new Set(selectedSubs);
+                      bulkMatchedSubs.forEach(s => newSelected.add(s.id));
+                      setSelectedSubs(newSelected);
+                      setActiveTab('submissions');
+                    }}
+                    disabled={bulkMatchedSubs.length === 0}
+                    style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#002147', color: '#FFF', fontSize: '13px', fontWeight: '600', cursor: bulkMatchedSubs.length === 0 ? 'not-allowed' : 'pointer', opacity: bulkMatchedSubs.length === 0 ? 0.5 : 1 }}
+                  >
+                    Select & Download in Submissions Tab
+                  </button>
+                </div>
+              </div>
+
+              {bulkMatchedSubs.length === 0 ? (
+                <div style={{ padding: '40px', textAlign: 'center', color: '#6B7280' }}>
+                  <Search size={32} style={{ marginBottom: '12px', opacity: 0.5, display: 'inline-block' }} />
+                  <p style={{ fontSize: '14px' }}>No records matched. Use the search tools above to find staff data.</p>
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto', maxHeight: '400px', overflowY: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                    <thead style={{ position: 'sticky', top: 0, backgroundColor: '#F9FAFB', zIndex: 1 }}>
+                      <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
+                        <th style={{ padding: '12px 24px', color: '#4B5563', fontWeight: '600' }}>S/N</th>
+                        <th style={{ padding: '12px 24px', color: '#4B5563', fontWeight: '600' }}>Staff ID</th>
+                        <th style={{ padding: '12px 24px', color: '#4B5563', fontWeight: '600' }}>Teacher Name</th>
+                        <th style={{ padding: '12px 24px', color: '#4B5563', fontWeight: '600' }}>Category</th>
+                        <th style={{ padding: '12px 24px', color: '#4B5563', fontWeight: '600' }}>School</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bulkMatchedSubs.map((s, idx) => (
+                        <tr key={s.id} style={{ borderBottom: '1px solid #F3F4F6', transition: 'background-color 0.2s' }} onMouseOver={e => e.currentTarget.style.backgroundColor = '#F9FAFB'} onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}>
+                          <td style={{ padding: '12px 24px', color: '#6B7280' }}>{idx + 1}</td>
+                          <td style={{ padding: '12px 24px', fontWeight: '600', color: '#002147' }}>{s.staffId || 'N/A'}</td>
+                          <td style={{ padding: '12px 24px', fontWeight: '600', color: '#111827' }}>{s.teacherName || `${s.firstName || ''} ${s.surname || ''}`}</td>
+                          <td style={{ padding: '12px 24px', color: '#4B5563' }}>{s.category || 'N/A'}</td>
+                          <td style={{ padding: '12px 24px', color: '#4B5563' }}>{s.school || 'N/A'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         )}
