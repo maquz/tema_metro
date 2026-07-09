@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, query, collection, where, getDocs } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Lock, Mail, GraduationCap, Building2, ShieldCheck, ShieldAlert, Eye, EyeOff, User } from 'lucide-react';
@@ -107,8 +107,20 @@ export default function Login() {
 
       // Step 3: Staff ID Migration / Validation Check
       if (!firestoreStaffId) {
-        // Migration: save entered staff ID
-        await setDoc(userDocRef, { staffId: staffId.trim() }, { merge: true });
+        // Migration: check for duplication
+        const staffIdTrimmed = staffId.trim();
+        if (staffIdTrimmed) {
+          const q = query(collection(db, 'users'), where('staffId', '==', staffIdTrimmed));
+          const snap = await getDocs(q);
+          const isDuplicate = snap.docs.some(d => d.id !== uid);
+          if (isDuplicate) {
+            await signOut(auth);
+            setError('This Staff ID is already linked to another account.');
+            setLoading(false);
+            return;
+          }
+        }
+        await setDoc(userDocRef, { staffId: staffIdTrimmed }, { merge: true });
       } else if (firestoreStaffId !== staffId.trim()) {
         await signOut(auth);
         setError('Invalid Staff ID for this account.');

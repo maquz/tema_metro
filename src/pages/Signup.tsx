@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, query, collection, where, getDocs } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { Link } from 'react-router-dom';
 import { Lock, Mail, Key, Eye, EyeOff, User } from 'lucide-react';
@@ -39,12 +39,23 @@ export default function Signup() {
     }
 
     try {
+      const staffIdTrimmed = staffId.trim();
+      if (staffIdTrimmed) {
+        const q = query(collection(db, 'users'), where('staffId', '==', staffIdTrimmed));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          setError('This Staff ID is already linked to another account.');
+          setLoading(false);
+          return;
+        }
+      }
+
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       // Save role and staffId
       await setDoc(doc(db, 'users', userCredential.user.uid), {
         email,
         role,
-        staffId: staffId.trim(),
+        staffId: staffIdTrimmed,
         createdAt: new Date().toISOString()
       });
       // Perform a hard redirect to the correct dashboard to guarantee clean load and bypass race conditions.

@@ -128,6 +128,9 @@ export default function AdminDashboard() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
+  // Selected rows
+  const [selectedSubs, setSelectedSubs] = useState<Set<string>>(new Set());
+
   // Selected submission modal
   const [selectedSub, setSelectedSub] = useState<any | null>(null);
   const pdfRef = useRef<HTMLDivElement>(null);
@@ -453,6 +456,9 @@ export default function AdminDashboard() {
       let processedSubs = 0;
       const zip = new JSZip();
 
+      const dateStr = new Date().toISOString().slice(0, 10);
+      const rootFolder = zip.folder(`GES_Submissions_${dateStr}`);
+
       for (let i = 0; i < validSubs.length; i++) {
         const sub = validSubs[i];
         try {
@@ -463,7 +469,7 @@ export default function AdminDashboard() {
             const safeTeacherName = `${sub.teacherName || 'Teacher'}`.replace(/[^a-zA-Z0-9- _]/g, '');
             const safeId = (sub.staffId || 'NO_ID').replace(/[^a-zA-Z0-9- _]/g, '');
             
-            zip.folder(safeSchoolFolder)?.file(`${safeId}_${safeTeacherName}.pdf`, pdfBytes);
+            rootFolder?.folder(safeSchoolFolder)?.file(`${safeId}_${safeTeacherName}.pdf`, pdfBytes);
           }
         } catch (e) {
           console.error('Error processing submission for ZIP:', e);
@@ -488,6 +494,12 @@ export default function AdminDashboard() {
   const handleDownloadAllSubmissions = async () => {
     const dateStr = new Date().toISOString().slice(0, 10);
     await downloadZippedSubmissions(filteredSubmissions, `Bulk_Submissions_${dateStr}`);
+  };
+
+  const handleDownloadSelectedSubmissions = async () => {
+    const selectedList = filteredSubmissions.filter(s => selectedSubs.has(s.id));
+    const dateStr = new Date().toISOString().slice(0, 10);
+    await downloadZippedSubmissions(selectedList, `Selected_Submissions_${dateStr}`);
   };
 
   // State for circuit and school bulk download
@@ -781,6 +793,16 @@ export default function AdminDashboard() {
                   <Download size={14} /> Export CSV
                 </button>
                 <button
+                  onClick={handleDownloadSelectedSubmissions}
+                  disabled={selectedSubs.size === 0 || bulkDownloading}
+                  style={{ width: '100%', padding: '11px 16px', borderRadius: '8px', border: '1.5px solid #002147', backgroundColor: '#F0F4F8', color: '#002147', fontSize: '13px', fontWeight: '700', cursor: (selectedSubs.size === 0 || bulkDownloading) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'all 0.2s', opacity: (selectedSubs.size === 0 || bulkDownloading) ? 0.6 : 1 }}
+                >
+                  <FolderDown size={14} /> 
+                  {bulkDownloading && bulkZipProgress 
+                    ? `Part ${bulkZipProgress.batch}/${bulkZipProgress.totalBatches} (${bulkZipProgress.current}/${bulkZipProgress.total})...` 
+                    : `Download Selected (${selectedSubs.size})`}
+                </button>
+                <button
                   onClick={handleDownloadAllSubmissions}
                   disabled={filteredSubmissions.length === 0 || bulkDownloading}
                   style={{ width: '100%', padding: '11px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#002147', color: '#FFFFFF', fontSize: '13px', fontWeight: '700', cursor: (filteredSubmissions.length === 0 || bulkDownloading) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'all 0.2s', opacity: (filteredSubmissions.length === 0 || bulkDownloading) ? 0.6 : 1 }}
@@ -821,6 +843,18 @@ export default function AdminDashboard() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
                     <thead>
                       <tr style={{ backgroundColor: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
+                        <th style={{ padding: '16px 12px', width: '40px', textAlign: 'center' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={filteredSubmissions.length > 0 && selectedSubs.size === filteredSubmissions.length} 
+                            onChange={(e) => {
+                              if (e.target.checked) setSelectedSubs(new Set(filteredSubmissions.map((s: any) => s.id)));
+                              else setSelectedSubs(new Set());
+                            }} 
+                            style={{ cursor: 'pointer' }}
+                          />
+                        </th>
+                        <th style={{ padding: '16px 12px', color: '#4B5563', fontWeight: '600' }}>S/N</th>
                         <th style={{ padding: '16px 24px', color: '#4B5563', fontWeight: '600' }}>Teacher Name</th>
                          <th style={{ padding: '16px 12px', color: '#4B5563', fontWeight: '600' }}>Staff ID</th>
                         <th style={{ padding: '16px 24px', color: '#4B5563', fontWeight: '600' }}>Category</th>
@@ -832,8 +866,24 @@ export default function AdminDashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredSubmissions.map((sub: any) => (
+                      {filteredSubmissions.map((sub: any, index: number) => (
                         <tr key={sub.id} style={{ borderBottom: '1px solid #F3F4F6', transition: 'background-color 0.15s' }} onMouseOver={e => e.currentTarget.style.backgroundColor = '#F9FAFB'} onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}>
+                          <td style={{ padding: '16px 12px', textAlign: 'center' }}>
+                            <input 
+                              type="checkbox" 
+                              checked={selectedSubs.has(sub.id)} 
+                              onChange={(e) => {
+                                const newSet = new Set(selectedSubs);
+                                if (e.target.checked) newSet.add(sub.id);
+                                else newSet.delete(sub.id);
+                                setSelectedSubs(newSet);
+                              }} 
+                              style={{ cursor: 'pointer' }}
+                            />
+                          </td>
+                          <td style={{ padding: '16px 12px', fontWeight: '600', color: '#6B7280' }}>
+                            {index + 1}
+                          </td>
                           <td style={{ padding: '16px 24px', fontWeight: '600', color: '#002147' }}>
                             {sub.teacherName}
                             {sub.sex && <span style={{ fontSize: '11px', color: '#6B7280', fontWeight: '500', marginLeft: '6px' }}>({sub.sex})</span>}
