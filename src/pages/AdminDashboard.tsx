@@ -166,6 +166,7 @@ export default function AdminDashboard() {
   const [bulkStaffIds, setBulkStaffIds] = useState('');
   const [bulkNames, setBulkNames] = useState('');
   const [bulkMatchedSubs, setBulkMatchedSubs] = useState<any[]>([]);
+  const [bulkNotFoundItems, setBulkNotFoundItems] = useState<string[]>([]);
 
   // Real-time Firestore Listeners
   useEffect(() => {
@@ -1388,6 +1389,11 @@ export default function AdminDashboard() {
                         if (!bulkStaffIds.trim()) return alert('Please enter at least one Staff ID.');
                         const idsToSearch = bulkStaffIds.split(/[\n,]+/).map(id => id.trim().toUpperCase()).filter(id => id);
                         const matchedSubs = submissions.filter(s => idsToSearch.includes(s.staffId?.toUpperCase()));
+                        
+                        const matchedIds = matchedSubs.map(s => s.staffId?.toUpperCase());
+                        const notFound = idsToSearch.filter(id => !matchedIds.includes(id));
+                        setBulkNotFoundItems(notFound);
+
                         if (matchedSubs.length === 0) return alert('No matching records found.');
                         setBulkMatchedSubs(matchedSubs);
                         alert(`Found ${matchedSubs.length} matching records by Staff ID.`);
@@ -1419,6 +1425,15 @@ export default function AdminDashboard() {
                           const fullName = (s.teacherName || `${s.firstName || ''} ${s.otherNames || ''} ${s.surname || ''}`).toLowerCase();
                           return namesToSearch.some(searchName => fullName.includes(searchName));
                         });
+
+                        const notFound = namesToSearch.filter(searchName => {
+                          return !matchedSubs.some(s => {
+                            const fullName = (s.teacherName || `${s.firstName || ''} ${s.otherNames || ''} ${s.surname || ''}`).toLowerCase();
+                            return fullName.includes(searchName);
+                          });
+                        });
+                        setBulkNotFoundItems(notFound);
+
                         if (matchedSubs.length === 0) return alert('No matching records found.');
                         setBulkMatchedSubs(matchedSubs);
                         alert(`Found ${matchedSubs.length} matching records by Name.`);
@@ -1486,9 +1501,9 @@ export default function AdminDashboard() {
                 <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#002147', margin: 0 }}>Search Results ({bulkMatchedSubs.length})</h3>
                 <div style={{ display: 'flex', gap: '12px' }}>
                   <button
-                    onClick={() => setBulkMatchedSubs([])}
-                    disabled={bulkMatchedSubs.length === 0}
-                    style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #D1D5DB', backgroundColor: '#FFF', color: '#4B5563', fontSize: '13px', fontWeight: '600', cursor: bulkMatchedSubs.length === 0 ? 'not-allowed' : 'pointer', opacity: bulkMatchedSubs.length === 0 ? 0.5 : 1 }}
+                    onClick={() => { setBulkMatchedSubs([]); setBulkNotFoundItems([]); }}
+                    disabled={bulkMatchedSubs.length === 0 && bulkNotFoundItems.length === 0}
+                    style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #D1D5DB', backgroundColor: '#FFF', color: '#4B5563', fontSize: '13px', fontWeight: '600', cursor: (bulkMatchedSubs.length === 0 && bulkNotFoundItems.length === 0) ? 'not-allowed' : 'pointer', opacity: (bulkMatchedSubs.length === 0 && bulkNotFoundItems.length === 0) ? 0.5 : 1 }}
                   >
                     Clear Results
                   </button>
@@ -1522,6 +1537,7 @@ export default function AdminDashboard() {
                         <th style={{ padding: '12px 24px', color: '#4B5563', fontWeight: '600' }}>Teacher Name</th>
                         <th style={{ padding: '12px 24px', color: '#4B5563', fontWeight: '600' }}>Category</th>
                         <th style={{ padding: '12px 24px', color: '#4B5563', fontWeight: '600' }}>School</th>
+                        <th style={{ padding: '12px 24px', color: '#4B5563', fontWeight: '600', textAlign: 'center' }}>Action</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1532,10 +1548,30 @@ export default function AdminDashboard() {
                           <td style={{ padding: '12px 24px', fontWeight: '600', color: '#111827' }}>{s.teacherName || `${s.firstName || ''} ${s.surname || ''}`}</td>
                           <td style={{ padding: '12px 24px', color: '#4B5563' }}>{s.category || 'N/A'}</td>
                           <td style={{ padding: '12px 24px', color: '#4B5563' }}>{s.school || 'N/A'}</td>
+                          <td style={{ padding: '12px 24px', textAlign: 'center' }}>
+                            <button
+                              onClick={() => handleOpenEdit(s)}
+                              style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #D1D5DB', backgroundColor: '#FFF', color: '#4B5563', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                            >
+                              <Pencil size={12} style={{ display: 'inline', marginRight: '4px' }} /> Edit
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
+                </div>
+              )}
+              {bulkNotFoundItems.length > 0 && (
+                <div style={{ padding: '16px 24px', backgroundColor: '#FEF2F2', borderTop: '1px solid #FEE2E2' }}>
+                  <h4 style={{ margin: '0 0 8px 0', color: '#B91C1C', fontSize: '14px', fontWeight: '700' }}>Items Not Found ({bulkNotFoundItems.length})</h4>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                    {bulkNotFoundItems.map((item, idx) => (
+                      <span key={idx} style={{ padding: '4px 8px', backgroundColor: '#FEE2E2', color: '#991B1B', borderRadius: '6px', fontSize: '12px', fontWeight: '600' }}>
+                        {item}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
