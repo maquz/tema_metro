@@ -169,7 +169,7 @@ function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, error
           </div>
           <div>
             <Field label="Staff ID" required>
-              <Inp value={f.staffId} onChange={upd('staffId')} placeholder="Staff ID" disabled={hasSubmissions} />
+              <Inp value={f.staffId} onChange={() => {}} placeholder="Auto-filled" disabled />
             </Field>
             {errors.staffId && <p style={{ color: '#CE1126', fontSize: '12px', marginTop: '4px' }}>{errors.staffId}</p>}
           </div>
@@ -726,7 +726,7 @@ function FileUploadRow({ docLabel, index, filesList, onFilesChange, isOptional, 
 
 // ── Main App ───────────────────────────────────────────────
 export default function TeacherForm() {
-  const { user, role, logout } = useAuth();
+  const { user, role, staffId: authStaffId, logout } = useAuth();
   const [section, setSection] = useState<number>(0);
   const [form, setForm] = useState<FormState>(initForm());
   const [errors, setErrors] = useState<Partial<FormState>>({});
@@ -740,6 +740,12 @@ export default function TeacherForm() {
 
   const totalSections = SECTIONS.length;
   const pct = ((section + 1) / totalSections) * 100;
+
+  useEffect(() => {
+    if (authStaffId) {
+      setForm(prev => ({ ...prev, staffId: authStaffId }));
+    }
+  }, [authStaffId]);
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'schools'), (snapshot) => {
@@ -777,8 +783,8 @@ export default function TeacherForm() {
 
       try {
         if (editSubmissionId) {
-          const formWithoutPhoto = { ...form };
-          delete formWithoutPhoto.photoUrl;
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { photoUrl, ...formWithoutPhoto } = form;
           await updateDoc(doc(db, 'submissions', editSubmissionId), {
             ...formWithoutPhoto,
             status: form.status || 'submitted',
@@ -794,8 +800,8 @@ export default function TeacherForm() {
           });
           if (existingDoc) {
             const existingId = existingDoc.id;
-            const formWithoutPhoto = { ...form };
-            delete formWithoutPhoto.photoUrl;
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { photoUrl, ...formWithoutPhoto } = form;
             await updateDoc(doc(db, 'submissions', existingId), {
               ...formWithoutPhoto,
               status: form.status || 'submitted',
@@ -803,8 +809,8 @@ export default function TeacherForm() {
             });
             setEditSubmissionId(existingId);
           } else {
-            const formWithoutPhoto = { ...form };
-            delete formWithoutPhoto.photoUrl;
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { photoUrl, ...formWithoutPhoto } = form;
             const docRef = await addDoc(collection(db, 'submissions'), {
               ...formWithoutPhoto,
               status: 'draft',

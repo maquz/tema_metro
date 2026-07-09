@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Lock, Mail, GraduationCap, Building2, ShieldCheck, ShieldAlert, Eye, EyeOff } from 'lucide-react';
+import { Lock, Mail, GraduationCap, Building2, ShieldCheck, ShieldAlert, Eye, EyeOff, User } from 'lucide-react';
 import Footer from '../components/Footer';
 
 type RoleOption = 'teacher' | 'metro_officer' | 'admin';
@@ -57,6 +57,7 @@ export default function Login() {
   const [selectedRole, setSelectedRole] = useState<RoleOption>(
     Object.keys(ROLE_CONFIG).includes(initialRole) ? initialRole : 'teacher'
   );
+  const [staffId, setStaffId] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -97,12 +98,25 @@ export default function Login() {
       const credential = await signInWithEmailAndPassword(auth, email, password);
       const uid = credential.user.uid;
 
-      // Step 2: Fetch Firestore role
+      // Step 2: Fetch Firestore role and Staff ID
       const userDocRef = doc(db, 'users', uid);
       const userDocSnap = await getDoc(userDocRef);
-      const firestoreRole: string = userDocSnap.exists() ? (userDocSnap.data().role ?? 'teacher') : 'teacher';
+      const userData = userDocSnap.exists() ? userDocSnap.data() : {};
+      const firestoreRole: string = userData.role ?? 'teacher';
+      const firestoreStaffId: string | undefined = userData.staffId;
 
-      // Step 3: Validate role vs selected portal
+      // Step 3: Staff ID Migration / Validation Check
+      if (!firestoreStaffId) {
+        // Migration: save entered staff ID
+        await setDoc(userDocRef, { staffId: staffId.trim() }, { merge: true });
+      } else if (firestoreStaffId !== staffId.trim()) {
+        await signOut(auth);
+        setError('Invalid Staff ID for this account.');
+        setLoading(false);
+        return;
+      }
+
+      // Step 4: Validate role vs selected portal
       const isAdminPortal = selectedRole === 'admin';
       const roleMatchesPortal =
         (selectedRole === 'teacher' && firestoreRole === 'teacher') ||
@@ -124,7 +138,7 @@ export default function Login() {
         return;
       }
 
-      // Step 4: Sign-in is valid.
+      // Step 5: Sign-in is valid.
       // Perform a hard redirect using window.location.href as a secondary fail-safe.
       // This resets state, bypasses routing race conditions, and guarantees clean dashboard mounting.
       if (firestoreRole === 'admin' || firestoreRole === 'editor') {
@@ -323,6 +337,46 @@ export default function Login() {
 
           {/* Form */}
           <form onSubmit={handleLogin}>
+            <div style={{ marginBottom: '16px' }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: '11px',
+                  fontWeight: '700',
+                  color: 'rgba(255,255,255,0.5)',
+                  marginBottom: '6px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                }}
+              >
+                Staff ID
+              </label>
+              <div style={{ position: 'relative' }}>
+                <User size={16} color="rgba(255,255,255,0.3)" style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
+                <input
+                  type="text"
+                  value={staffId}
+                  onChange={e => setStaffId(e.target.value)}
+                  required
+                  placeholder="Enter your Staff ID"
+                  style={{
+                    width: '100%',
+                    padding: '13px 14px 13px 42px',
+                    borderRadius: '10px',
+                    border: '1.5px solid rgba(255,255,255,0.1)',
+                    backgroundColor: 'rgba(255,255,255,0.05)',
+                    fontSize: '14px',
+                    color: '#FFFFFF',
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                    transition: 'border-color 0.2s',
+                  }}
+                  onFocus={e => (e.target.style.borderColor = cfg.color)}
+                  onBlur={e => (e.target.style.borderColor = 'rgba(255,255,255,0.1)')}
+                />
+              </div>
+            </div>
+
             <div style={{ marginBottom: '16px' }}>
               <label
                 style={{

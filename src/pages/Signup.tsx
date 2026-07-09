@@ -3,11 +3,12 @@ import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { Link } from 'react-router-dom';
-import { Lock, Mail, Key, Eye, EyeOff } from 'lucide-react';
+import { Lock, Mail, Key, Eye, EyeOff, User } from 'lucide-react';
 import Footer from '../components/Footer';
 
 export default function Signup() {
   const [selectedRole, setSelectedRole] = useState<'teacher' | 'admin'>('teacher');
+  const [staffId, setStaffId] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -39,10 +40,11 @@ export default function Signup() {
 
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      // Save role
+      // Save role and staffId
       await setDoc(doc(db, 'users', userCredential.user.uid), {
         email,
         role,
+        staffId: staffId.trim(),
         createdAt: new Date().toISOString()
       });
       // Perform a hard redirect to the correct dashboard to guarantee clean load and bypass race conditions.
@@ -139,6 +141,16 @@ export default function Signup() {
               >
                 Admin / Metro
               </button>
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'rgba(255,255,255,0.5)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Staff ID</label>
+              <div style={{ position: 'relative' }}>
+                <User size={16} color="rgba(255,255,255,0.3)" style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
+                <input type="text" value={staffId} onChange={e => setStaffId(e.target.value)} required
+                  style={{ width: '100%', padding: '13px 14px 13px 42px', borderRadius: '10px', border: '1.5px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.05)', fontSize: '14px', color: '#FFFFFF', outline: 'none', boxSizing: 'border-box' }}
+                  placeholder="Enter your Staff ID" />
+              </div>
             </div>
 
             <div style={{ marginBottom: '16px' }}>

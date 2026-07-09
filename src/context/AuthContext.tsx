@@ -6,6 +6,7 @@ import { auth, db } from '../firebase';
 interface AuthContextType {
   user: User | null;
   role: string | null;
+  staffId: string | null;
   loading: boolean;
   logout: () => Promise<void>;
 }
@@ -13,6 +14,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   user: null,
   role: null,
+  staffId: null,
   loading: true,
   logout: async () => {},
 });
@@ -23,14 +25,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [authState, setAuthState] = useState<{
     user: User | null;
     role: string | null;
+    staffId: string | null;
     loading: boolean;
   }>({
     user: null,
     role: null,
+    staffId: null,
     loading: true,
   });
 
-  const { user, role, loading } = authState;
+  const { user, role, staffId, loading } = authState;
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -42,9 +46,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const docRef = doc(db, 'users', firebaseUser.uid);
           const docSnap = await getDoc(docRef);
           const fetchedRole = docSnap.exists() ? (docSnap.data().role || null) : null;
+          const fetchedStaffId = docSnap.exists() ? (docSnap.data().staffId || null) : null;
           setAuthState({
             user: firebaseUser,
             role: fetchedRole,
+            staffId: fetchedStaffId,
             loading: false,
           });
         } catch (error) {
@@ -52,6 +58,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setAuthState({
             user: firebaseUser,
             role: null,
+            staffId: null,
             loading: false,
           });
         }
@@ -59,6 +66,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setAuthState({
           user: null,
           role: null,
+          staffId: null,
           loading: false,
         });
       }
@@ -121,7 +129,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, role, loading, logout }}>
+    <AuthContext.Provider value={{ user, role, staffId, loading, logout }}>
       {loading ? (
         <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#002147', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', color: '#FFF', gap: '16px', fontFamily: 'system-ui, sans-serif' }}>
           <div style={{ width: '80px', height: '80px', borderRadius: '50%', backgroundColor: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px', boxShadow: '0 4px 10px rgba(0,0,0,0.2)' }}>

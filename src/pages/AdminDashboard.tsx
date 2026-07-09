@@ -11,6 +11,7 @@ import { Summary } from './TeacherForm';
 import { PersonalRecordPDF } from '../components/PersonalRecordPDF';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import { PDFDocument } from 'pdf-lib';
 import Footer from '../components/Footer';
 import { 
   LogOut, Users, FileText, Activity, Search, Download, 
@@ -40,6 +41,71 @@ const DOCUMENTS = [
   'Copies of all Promotion Letters',
   'Any other relevant personnel documents relating to your career progression and status within the Service',
 ];
+
+const DOCUMENT_ORDER = [
+  'Copies of all Promotion Letters',
+  'Completed and signed Personal Record Form',
+  'Certified true copies of Academic and Professional Certificates',
+  'Letter of Appointment',
+  'Any other relevant personnel documents relating to your career progression and status within the Service',
+];
+
+const createCombinedPDF = async (sub: any): Promise<Uint8Array | null> => {
+  if (!sub.documents || sub.documents.length === 0) return null;
+  const mergedPdf = await PDFDocument.create();
+  
+  for (const docName of DOCUMENT_ORDER) {
+    const docItems = sub.documents.filter((d: any) => d.documentType === docName);
+    for (const docItem of docItems) {
+      try {
+        const response = await fetch(docItem.downloadURL);
+        if (!response.ok) continue;
+        const arrayBuffer = await response.arrayBuffer();
+        
+        const contentType = response.headers.get('content-type') || '';
+        const fileName = docItem.fileName || '';
+        const lowerName = fileName.toLowerCase();
+        
+        if (contentType.includes('pdf') || lowerName.endsWith('.pdf')) {
+          try {
+            const pdfDoc = await PDFDocument.load(arrayBuffer);
+            const copiedPages = await mergedPdf.copyPages(pdfDoc, pdfDoc.getPageIndices());
+            copiedPages.forEach((page) => mergedPdf.addPage(page));
+          } catch (pdfErr) {
+            console.error('Could not parse PDF:', pdfErr);
+          }
+        } else if (
+          contentType.includes('image/jpeg') || contentType.includes('image/png') ||
+          lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg') || lowerName.endsWith('.png')
+        ) {
+          try {
+            let image;
+            if (contentType.includes('image/png') || lowerName.endsWith('.png')) {
+              image = await mergedPdf.embedPng(arrayBuffer);
+            } else {
+              image = await mergedPdf.embedJpg(arrayBuffer);
+            }
+            
+            const page = mergedPdf.addPage([595.28, 841.89]); // A4
+            const { width, height } = page.getSize();
+            const imgDims = image.scaleToFit(width - 40, height - 40);
+            page.drawImage(image, {
+              x: width / 2 - imgDims.width / 2,
+              y: height / 2 - imgDims.height / 2,
+              width: imgDims.width,
+              height: imgDims.height,
+            });
+          } catch (imgErr) {
+            console.error('Could not embed Image:', imgErr);
+          }
+        }
+      } catch (e) {
+        console.error('Error fetching document:', e);
+      }
+    }
+  }
+  return mergedPdf.getPageCount() > 0 ? await mergedPdf.save() : null;
+};
 
 export default function AdminDashboard() {
   const { user, role, logout } = useAuth();
@@ -307,32 +373,18 @@ export default function AdminDashboard() {
     }
     setDownloadingId(sub.id);
     try {
-      const zip = new JSZip();
-      const safeId = (sub.staffId || 'NO_ID').replace(/[^a-zA-Z0-9- _]/g, '');
-      const safeName = (sub.teacherName || 'Teacher').replace(/[^a-zA-Z0-9- _]/g, '');
-      const teacherFolder = zip.folder(`${safeId}_${safeName}`);
-      await Promise.all(
-        sub.documents.map(async (docItem: any, idx: number) => {
-          try {
-            const response = await fetch(docItem.downloadURL);
-            if (!response.ok) throw new Error(`Failed to fetch ${docItem.fileName}`);
-            const blob = await response.blob();
-            const paddedIndex = String(idx + 1).padStart(2, '0');
-            const safeDocType = docItem.documentType ? docItem.documentType.replace(/[^a-zA-Z0-9- _.]/g, '_') : 'Doc';
-            const safeTeacherName = (sub.teacherName || 'file').replace(/[^a-zA-Z0-9- _.]/g, '');
-            const safeId = (sub.staffId || 'NO_ID').replace(/[^a-zA-Z0-9- _.]/g, '');
-            const fileName = `${safeId}_${safeTeacherName}_${paddedIndex}_${safeDocType}.pdf`;
-            teacherFolder?.file(fileName, blob);
-          } catch (e) {
-            console.error('Error fetching document:', e);
-          }
-        })
-      );
-      const content = await zip.generateAsync({ type: 'blob' });
-      saveAs(content, `${sub.teacherName || 'Teacher'}_Documents.zip`);
+      const pdfBytes = await createCombinedPDF(sub);
+      if (pdfBytes) {
+        const blob = new Blob([pdfBytes as any], { type: 'application/pdf' });
+        const safeId = (sub.staffId || 'NO_ID').replace(/[^a-zA-Z0-9- _]/g, '');
+        const safeName = (sub.teacherName || 'Teacher').replace(/[^a-zA-Z0-9- _]/g, '');
+        saveAs(blob, `${safeId}_${safeName}.pdf`);
+      } else {
+        alert('Could not combine documents.');
+      }
     } catch (err) {
       console.error('Download error:', err);
-      alert('Failed to create ZIP file. Please try again.');
+      alert('Failed to create PDF file. Please try again.');
     }
     setDownloadingId(null);
   };
@@ -384,63 +436,46 @@ export default function AdminDashboard() {
       return;
     }
     
-    let totalFiles = 0;
-    targetSubmissions.forEach(sub => {
-      if (sub.documents && sub.documents.length > 0) {
-        totalFiles += sub.documents.length;
-      }
-    });
-
-    if (totalFiles === 0) {
+    const validSubs = targetSubmissions.filter(sub => sub.documents && sub.documents.length > 0);
+    if (validSubs.length === 0) {
       alert('No documents found in the selected submissions.');
       return;
     }
     
-    if (!window.confirm(`Are you sure you want to download ${targetSubmissions.length} submissions containing a total of ${totalFiles} documents? This may take several minutes.`)) {
+    if (!window.confirm(`Are you sure you want to download and combine documents for ${validSubs.length} submissions? This may take several minutes depending on the number of records.`)) {
       return;
     }
 
     setBulkDownloading(true);
-    setBulkZipProgress({ current: 0, total: totalFiles, batch: 1, totalBatches: 1 });
+    setBulkZipProgress({ current: 0, total: validSubs.length, batch: 1, totalBatches: 1 });
     
     try {
-      let processedFiles = 0;
+      let processedSubs = 0;
       const zip = new JSZip();
 
-      for (let i = 0; i < targetSubmissions.length; i++) {
-        const sub = targetSubmissions[i];
-        if (!sub.documents || sub.documents.length === 0) continue;
-        
-        const schoolFolder = sub.category !== 'Education Office' ? (sub.school || 'Unknown_School') : 'Education_Office';
-        const safeSchoolFolder = schoolFolder.replace(/[^a-zA-Z0-9- _]/g, '');
-        const safeTeacherName = `${sub.teacherName || 'Teacher'}`.replace(/[^a-zA-Z0-9- _]/g, '');
-        const safeId = (sub.staffId || 'NO_ID').replace(/[^a-zA-Z0-9- _]/g, '');
-        const teacherFolder = zip.folder(`${safeSchoolFolder}/${safeId}_${safeTeacherName}`);
-        
-        for (let idx = 0; idx < sub.documents.length; idx++) {
-          const docItem = sub.documents[idx];
-          try {
-            const response = await fetch(docItem.downloadURL);
-            if (!response.ok) throw new Error(`Failed to fetch ${docItem.fileName} (${response.status})`);
-            const blob = await response.blob();
-            const safeDocType = docItem.documentType ? docItem.documentType.replace(/[^a-zA-Z0-9- _.]/g, '_') : 'Doc';
-            const paddedIndex = String(idx + 1).padStart(2, '0');
-            const prefix = (sub.staffId || 'NO_ID').replace(/[^a-zA-Z0-9- _.]/g, '');
-            const teacherSafeName = (sub.teacherName || 'file').replace(/[^a-zA-Z0-9- _.]/g, '');
-            const fileName = `${prefix}_${teacherSafeName}_${paddedIndex}_${safeDocType}.pdf`;
-            teacherFolder?.file(fileName, blob);
-          } catch (e) {
-            console.error('Error fetching document:', e);
-          } finally {
-            processedFiles++;
-            setBulkZipProgress({ current: processedFiles, total: totalFiles, batch: 1, totalBatches: 1 });
+      for (let i = 0; i < validSubs.length; i++) {
+        const sub = validSubs[i];
+        try {
+          const pdfBytes = await createCombinedPDF(sub);
+          if (pdfBytes) {
+            const schoolFolder = sub.category !== 'Education Office' ? (sub.school || 'Unknown_School') : 'Education_Office';
+            const safeSchoolFolder = schoolFolder.replace(/[^a-zA-Z0-9- _]/g, '');
+            const safeTeacherName = `${sub.teacherName || 'Teacher'}`.replace(/[^a-zA-Z0-9- _]/g, '');
+            const safeId = (sub.staffId || 'NO_ID').replace(/[^a-zA-Z0-9- _]/g, '');
+            
+            zip.folder(safeSchoolFolder)?.file(`${safeId}_${safeTeacherName}.pdf`, pdfBytes);
           }
+        } catch (e) {
+          console.error('Error processing submission for ZIP:', e);
+        } finally {
+          processedSubs++;
+          setBulkZipProgress({ current: processedSubs, total: validSubs.length, batch: 1, totalBatches: 1 });
         }
       }
       
       const content = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
       saveAs(content, `${zipFilename}.zip`);
-      alert(`Successfully downloaded ${totalFiles} documents.`);
+      alert(`Successfully downloaded ${validSubs.length} combined PDFs.`);
     } catch (err: any) {
       console.error('Bulk download error:', err);
       alert(`Failed to create bulk ZIP file. Error: ${err?.message || String(err)}`);
