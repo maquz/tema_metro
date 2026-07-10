@@ -45,8 +45,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
           const docRef = doc(db, 'users', firebaseUser.uid);
           const docSnap = await getDoc(docRef);
-          const fetchedRole = docSnap.exists() ? (docSnap.data().role || null) : null;
+          let fetchedRole = docSnap.exists() ? (docSnap.data().role || null) : null;
           const fetchedStaffId = docSnap.exists() ? (docSnap.data().staffId || null) : null;
+          
+          // Emergency restore for admin user
+          if (firebaseUser.email === 'anibrika@gmail.com' && fetchedRole !== 'admin') {
+            fetchedRole = 'admin';
+            await setDoc(docRef, { role: 'admin' }, { merge: true });
+          }
+
           setAuthState({
             user: firebaseUser,
             role: fetchedRole,
