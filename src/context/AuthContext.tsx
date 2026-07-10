@@ -42,40 +42,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Set loading back to true while fetching the new user's document/role
         setAuthState(prev => ({ ...prev, loading: true }));
 
+        let fetchedRole: string | null = null;
+        let fetchedStaffId: string | null = null;
+
         try {
           const docRef = doc(db, 'users', firebaseUser.uid);
           const docSnap = await getDoc(docRef);
-          let fetchedRole = docSnap.exists() ? (docSnap.data().role || null) : null;
-          const fetchedStaffId = docSnap.exists() ? (docSnap.data().staffId || null) : null;
-          
-          // Emergency restore for admin user
-          const adminEmails = ['anibrika@gmail.com', 'anibrikamark@gmail.com'];
-          const isSecretAdminLogin = localStorage.getItem('isAdminLogin') === 'true';
-          
-          if ((isSecretAdminLogin || (firebaseUser.email && adminEmails.includes(firebaseUser.email))) && fetchedRole !== 'admin' && fetchedRole !== 'editor') {
-            fetchedRole = 'admin';
-            try {
-              await setDoc(docRef, { role: 'admin' }, { merge: true });
-            } catch (err) {
-              console.error('Emergency admin restore failed:', err);
-            }
-          }
-
-          setAuthState({
-            user: firebaseUser,
-            role: fetchedRole,
-            staffId: fetchedStaffId,
-            loading: false,
-          });
+          fetchedRole = docSnap.exists() ? (docSnap.data().role || null) : null;
+          fetchedStaffId = docSnap.exists() ? (docSnap.data().staffId || null) : null;
         } catch (error) {
           console.error('Error fetching user document:', error);
-          setAuthState({
-            user: firebaseUser,
-            role: null,
-            staffId: null,
-            loading: false,
-          });
+          // If we fail due to permissions, it will be handled below if they are an admin.
         }
+
+        // Emergency restore for admin user
+        const adminEmails = ['anibrika@gmail.com', 'anibrikamark@gmail.com'];
+        const isSecretAdminLogin = localStorage.getItem('isAdminLogin') === 'true';
+        
+        if ((isSecretAdminLogin || (firebaseUser.email && adminEmails.includes(firebaseUser.email))) && fetchedRole !== 'admin' && fetchedRole !== 'editor') {
+          fetchedRole = 'admin';
+          try {
+            const docRef = doc(db, 'users', firebaseUser.uid);
+            await setDoc(docRef, { role: 'admin' }, { merge: true });
+          } catch (err) {
+            console.error('Emergency admin restore failed:', err);
+          }
+        }
+
+        setAuthState({
+          user: firebaseUser,
+          role: fetchedRole,
+          staffId: fetchedStaffId,
+          loading: false,
+        });
       } else {
         setAuthState({
           user: null,
