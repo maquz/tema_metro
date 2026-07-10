@@ -213,6 +213,10 @@ function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, error
             {errors.subject && <p style={{ color: '#CE1126', fontSize: '12px', margin: '-12px 0 12px' }}>{errors.subject}</p>}
           </>
         )}
+
+        <div className="form-row cols-1">
+          <Field label="Current Rank" required><Sel value={f.currentRank} onChange={upd('currentRank')} options={['Director II', 'Deputy Director', 'Assistant Director I', 'Assistant Director II', 'Principal Superintendent', 'Senior Superintendent I', 'Senior Superintendent II', 'Superintendent I', 'Superintendent II', 'Pupil Teacher']} /></Field>
+        </div>
       </div>
 
       <div className="section-title" style={{ margin: '0 0 0 0' }}>Biographic Details</div>
@@ -246,9 +250,7 @@ function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, error
           <Field label="Reg. No."><Inp value={f.regNo} onChange={upd('regNo')} placeholder="Reg. No." /></Field>
           <Field label="Staff ID"><Inp value={f.staffId} onChange={() => {}} placeholder="Auto-filled from Registration" disabled /></Field>
         </div>
-        <div className="form-row cols-1">
-          <Field label="Current Rank" required><Sel value={f.currentRank} onChange={upd('currentRank')} options={['Director II', 'Deputy Director', 'Assistant Director I', 'Assistant Director II', 'Principal Superintendent', 'Senior Superintendent I', 'Senior Superintendent II', 'Superintendent I', 'Superintendent II', 'Pupil Teacher']} /></Field>
-        </div>
+
         <div className="form-row cols-2">
           <Field label="Date of Birth" required><Inp value={f.dob} onChange={upd('dob')} type="date" /></Field>
           <Field label="Nationality"><Inp value={f.nationality} onChange={upd('nationality')} placeholder="e.g. Ghanaian" /></Field>
