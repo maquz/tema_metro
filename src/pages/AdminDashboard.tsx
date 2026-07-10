@@ -629,7 +629,11 @@ export default function AdminDashboard() {
 
   const dynamicCircuits = Array.from(new Set(schoolsData.map((s: any) => s.circuit))).sort();
   const displayCircuits = dynamicCircuits.length > 0 ? dynamicCircuits : CIRCUITS;
-  const displayRanks = Array.from(new Set(submissions.map((s: any) => s.currentRank).filter(Boolean))).sort();
+  const displayRanks = [
+    'Director II', 'Deputy Director', 'Assistant Director I', 'Assistant Director II', 
+    'Principal Superintendent', 'Senior Superintendent I', 'Senior Superintendent II', 
+    'Superintendent I', 'Superintendent II', 'Pupil Teacher'
+  ];
 
   // Metrics calculations
   const totalSubmissions = submissions.length;
