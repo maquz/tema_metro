@@ -168,6 +168,22 @@ export default function AdminDashboard() {
   const [bulkMatchedSubs, setBulkMatchedSubs] = useState<any[]>([]);
   const [bulkNotFoundItems, setBulkNotFoundItems] = useState<string[]>([]);
 
+  useEffect(() => {
+    setBulkMatchedSubs(prev => {
+      if (prev.length === 0) return prev;
+      let changed = false;
+      const next = prev.map(p => {
+        const up = submissions.find(s => s.id === p.id);
+        if (up && up !== p) {
+          changed = true;
+          return up;
+        }
+        return p;
+      });
+      return changed ? next : prev;
+    });
+  }, [submissions]);
+
   // Real-time Firestore Listeners
   useEffect(() => {
     const unsubSubmissions = onSnapshot(collection(db, 'submissions'), (snapshot) => {
@@ -343,6 +359,7 @@ export default function AdminDashboard() {
       school: sub.school || '',
       subject: sub.subject || '',
       sex: sub.sex || '',
+      currentRank: sub.currentRank || '',
     });
   };
 
@@ -355,7 +372,7 @@ export default function AdminDashboard() {
       setEditSub(null);
     } catch (err) {
       console.error('Error updating submission:', err);
-      alert('Failed to save changes. Please try again.');
+      alert(`Failed to save changes: ${(err as any).message || 'Please try again.'}`);
     }
     setEditSaving(false);
   };
@@ -1875,7 +1892,8 @@ export default function AdminDashboard() {
               <div>
                 <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#4B5563', textTransform: 'uppercase', marginBottom: '6px' }}>Category</label>
                 <select value={editForm.category || ''} onChange={e => setEditForm((f: any) => ({ ...f, category: e.target.value }))} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '14px', backgroundColor: '#FFF' }}>
-                  <option value="School">School</option>
+                  <option value="BASIC SCHOOL">BASIC SCHOOL</option>
+                  <option value="Senior High School">Senior High School</option>
                   <option value="Education Office">Education Office</option>
                 </select>
               </div>
@@ -1902,6 +1920,22 @@ export default function AdminDashboard() {
                       <option value="">Select</option>
                       <option value="Male">Male</option>
                       <option value="Female">Female</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#4B5563', textTransform: 'uppercase', marginBottom: '6px' }}>Current Rank</label>
+                    <select value={editForm.currentRank || ''} onChange={e => setEditForm((f: any) => ({ ...f, currentRank: e.target.value }))} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '14px', backgroundColor: '#FFF' }}>
+                      <option value="">Select Rank</option>
+                      <option value="Director II">Director II</option>
+                      <option value="Deputy Director">Deputy Director</option>
+                      <option value="Assistant Director I">Assistant Director I</option>
+                      <option value="Assistant Director II">Assistant Director II</option>
+                      <option value="Principal Superintendent">Principal Superintendent</option>
+                      <option value="Senior Superintendent I">Senior Superintendent I</option>
+                      <option value="Senior Superintendent II">Senior Superintendent II</option>
+                      <option value="Superintendent I">Superintendent I</option>
+                      <option value="Superintendent II">Superintendent II</option>
+                      <option value="Pupil Teacher">Pupil Teacher</option>
                     </select>
                   </div>
                 </>
