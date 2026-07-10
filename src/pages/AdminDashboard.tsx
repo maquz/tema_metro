@@ -257,10 +257,10 @@ export default function AdminDashboard() {
 
   // Submissions Filtering logic
   const filteredSubmissions = submissions.filter((sub: any) => {
-    const matchesSearch = 
-      sub.teacherName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      sub.staffId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      false;
+    const matchesSearch = searchTerm === '' ? true : (
+      (sub.teacherName?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+      (sub.staffId?.toLowerCase() || '').includes(searchTerm.toLowerCase())
+    );
     const matchesCategory = filterCategory ? sub.category === filterCategory : true;
     const matchesCircuit = filterCircuit ? sub.circuit === filterCircuit : true;
     const matchesSubject = filterSubject ? sub.subject === filterSubject : true;
