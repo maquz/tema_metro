@@ -1035,6 +1035,28 @@ export default function AdminDashboard() {
                     </tbody>
                   </table>
                   
+                  {/* Submissions Pagination */}
+                  {Math.ceil(filteredSubmissions.length / itemsPerPage) > 1 && (
+                    <div style={{ padding: '16px 24px', borderTop: '1px solid #E5E7EB', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#F9FAFB' }}>
+                      <button 
+                        onClick={() => setSubmissionsPage(p => Math.max(1, p - 1))} 
+                        disabled={submissionsPage === 1}
+                        style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #D1D5DB', backgroundColor: submissionsPage === 1 ? '#F3F4F6' : '#FFF', color: submissionsPage === 1 ? '#9CA3AF' : '#374151', fontSize: '13px', fontWeight: '600', cursor: submissionsPage === 1 ? 'not-allowed' : 'pointer' }}
+                      >
+                        Previous
+                      </button>
+                      <span style={{ fontSize: '13px', color: '#4B5563', fontWeight: '500' }}>
+                        Page {submissionsPage} of {Math.ceil(filteredSubmissions.length / itemsPerPage)}
+                      </span>
+                      <button 
+                        onClick={() => setSubmissionsPage(p => Math.min(Math.ceil(filteredSubmissions.length / itemsPerPage), p + 1))} 
+                        disabled={submissionsPage === Math.ceil(filteredSubmissions.length / itemsPerPage)}
+                        style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #D1D5DB', backgroundColor: submissionsPage === Math.ceil(filteredSubmissions.length / itemsPerPage) ? '#F3F4F6' : '#FFF', color: submissionsPage === Math.ceil(filteredSubmissions.length / itemsPerPage) ? '#9CA3AF' : '#374151', fontSize: '13px', fontWeight: '600', cursor: submissionsPage === Math.ceil(filteredSubmissions.length / itemsPerPage) ? 'not-allowed' : 'pointer' }}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  )}
                   
                 </div>
               )}
