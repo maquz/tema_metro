@@ -169,6 +169,11 @@ export default function AdminDashboard() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [bulkNotFoundItems, setBulkNotFoundItems] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState('newest');
+  
+  // Pagination State
+  const [submissionsPage, setSubmissionsPage] = useState(1);
+  const [usersPage, setUsersPage] = useState(1);
+  const itemsPerPage = 50;
 
   useEffect(() => {
     setBulkMatchedSubs(prev => {
@@ -256,8 +261,14 @@ export default function AdminDashboard() {
     return lastActiveDate > fiveMinutesAgo;
   };
 
+  // Filter out true drafts first so they don't bloat the total counts
+  const validSubmissions = submissions.filter((sub: any) => {
+    const isDraft = sub.status === 'draft' && (!sub.documents || sub.documents.length === 0);
+    return !isDraft;
+  });
+
   // Submissions Filtering logic
-  const filteredSubmissions = submissions.filter((sub: any) => {
+  const filteredSubmissions = validSubmissions.filter((sub: any) => {
     const matchesSearch = searchTerm === '' ? true : (
       (sub.teacherName?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
       (sub.staffId?.toLowerCase() || '').includes(searchTerm.toLowerCase())
@@ -932,7 +943,9 @@ export default function AdminDashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredSubmissions.map((sub: any, index: number) => (
+                      {filteredSubmissions.slice((submissionsPage - 1) * itemsPerPage, submissionsPage * itemsPerPage).map((sub: any, pageIndex: number) => {
+                        const index = (submissionsPage - 1) * itemsPerPage + pageIndex;
+                        return (
                         <tr key={sub.id} style={{ borderBottom: '1px solid #F3F4F6', transition: 'background-color 0.15s' }} onMouseOver={e => e.currentTarget.style.backgroundColor = '#F9FAFB'} onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}>
                           <td style={{ padding: '16px 12px', textAlign: 'center' }}>
                             <input 
@@ -1041,7 +1054,7 @@ export default function AdminDashboard() {
                 <input 
                   type="text" 
                   value={userSearchTerm} 
-                  onChange={e => setUserSearchTerm(e.target.value)} 
+                  onChange={e => { setUserSearchTerm(e.target.value); setUsersPage(1); }} 
                   placeholder="Search by email..." 
                   style={{ width: '100%', padding: '8px 12px 8px 36px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
                 />
@@ -1061,11 +1074,14 @@ export default function AdminDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {users.filter(u => u.email?.toLowerCase().includes(userSearchTerm.toLowerCase())).map((u: any) => {
-                    const online = isUserActive(u);
-                    return (
-                      <tr key={u.id} style={{ borderBottom: '1px solid #F3F4F6' }}>
-                        <td style={{ padding: '16px 24px', fontWeight: '600', color: '#111827' }}>
+                  {(() => {
+                    const filteredUsers = users.filter(u => u.email?.toLowerCase().includes(userSearchTerm.toLowerCase()));
+                    const paginatedUsers = filteredUsers.slice((usersPage - 1) * itemsPerPage, usersPage * itemsPerPage);
+                    return paginatedUsers.map((u: any) => {
+                      const online = isUserActive(u);
+                      return (
+                        <tr key={u.id} style={{ borderBottom: '1px solid #F3F4F6' }}>
+                          <td style={{ padding: '16px 24px', fontWeight: '600', color: '#111827' }}>
                           {u.email}
                           {u.id === user?.uid && <span style={{ fontSize: '11px', color: '#6B7280', fontStyle: 'italic', marginLeft: '6px' }}>(You)</span>}
                         </td>
@@ -1143,9 +1159,38 @@ export default function AdminDashboard() {
                         )}
                       </tr>
                     );
-                  })}
+                  })})()}
                 </tbody>
               </table>
+
+              {/* Users Pagination */}
+              {(() => {
+                const filteredUsers = users.filter(u => u.email?.toLowerCase().includes(userSearchTerm.toLowerCase()));
+                const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
+                if (totalPages <= 1) return null;
+                return (
+                  <div style={{ padding: '16px 24px', borderTop: '1px solid #E5E7EB', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#F9FAFB' }}>
+                    <button 
+                      onClick={() => setUsersPage(p => Math.max(1, p - 1))} 
+                      disabled={usersPage === 1}
+                      style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #D1D5DB', backgroundColor: usersPage === 1 ? '#F3F4F6' : '#FFF', color: usersPage === 1 ? '#9CA3AF' : '#374151', fontSize: '13px', fontWeight: '600', cursor: usersPage === 1 ? 'not-allowed' : 'pointer' }}
+                    >
+                      Previous
+                    </button>
+                    <span style={{ fontSize: '13px', color: '#4B5563', fontWeight: '500' }}>
+                      Page {usersPage} of {totalPages}
+                    </span>
+                    <button 
+                      onClick={() => setUsersPage(p => Math.min(totalPages, p + 1))} 
+                      disabled={usersPage === totalPages}
+                      style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #D1D5DB', backgroundColor: usersPage === totalPages ? '#F3F4F6' : '#FFF', color: usersPage === totalPages ? '#9CA3AF' : '#374151', fontSize: '13px', fontWeight: '600', cursor: usersPage === totalPages ? 'not-allowed' : 'pointer' }}
+                    >
+                      Next
+                    </button>
+                  </div>
+                );
+              })()}
+
             </div>
           </div>
         )}
@@ -1634,8 +1679,10 @@ export default function AdminDashboard() {
 
         {/* Tab CONTENT 3: APP ANALYTICS */}
         {activeTab === 'analytics' && (() => {
-          const schoolSubs = submissions.filter((s: any) => s.category !== 'Education Office').length;
-          const officeSubs = submissions.filter((s: any) => s.category === 'Education Office').length;
+          const validSubmissions = submissions.filter((s: any) => s.status !== 'draft');
+          const totalSubmissions = validSubmissions.length;
+          const schoolSubs = validSubmissions.filter((s: any) => s.category !== 'Education Office').length;
+          const officeSubs = validSubmissions.filter((s: any) => s.category === 'Education Office').length;
           const teacherCount = users.filter((u: any) => !u.role || u.role === 'teacher').length;
           const metroCount = users.filter((u: any) => u.role === 'metro_officer').length;
           const adminCount = users.filter((u: any) => u.role === 'admin' || u.role === 'editor').length;
