@@ -281,11 +281,7 @@ export default function AdminDashboard() {
       }
     }
     
-    // Ignore true drafts (no documents). Old submissions that got marked as draft by the auto-save bug 
-    // will still have their documents array, so we should show them.
-    const isDraft = sub.status === 'draft' && (!sub.documents || sub.documents.length === 0);
-    
-    return !isDraft && matchesSearch && matchesCategory && matchesCircuit && matchesSubject && matchesDate;
+    return matchesSearch && matchesCategory && matchesCircuit && matchesSubject && matchesDate;
   }).sort((a: any, b: any) => {
     if (sortBy === 'newest') return (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0);
     if (sortBy === 'oldest') return (a.submittedAt?.seconds || 0) - (b.submittedAt?.seconds || 0);
