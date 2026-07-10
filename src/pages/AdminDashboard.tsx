@@ -168,6 +168,7 @@ export default function AdminDashboard() {
   const [bulkMatchedSubs, setBulkMatchedSubs] = useState<any[]>([]);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [bulkNotFoundItems, setBulkNotFoundItems] = useState<string[]>([]);
+  const [sortBy, setSortBy] = useState('newest');
 
   useEffect(() => {
     setBulkMatchedSubs(prev => {
@@ -285,6 +286,13 @@ export default function AdminDashboard() {
     const isDraft = sub.status === 'draft' && (!sub.documents || sub.documents.length === 0);
     
     return !isDraft && matchesSearch && matchesCategory && matchesCircuit && matchesSubject && matchesDate;
+  }).sort((a: any, b: any) => {
+    if (sortBy === 'newest') return (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0);
+    if (sortBy === 'oldest') return (a.submittedAt?.seconds || 0) - (b.submittedAt?.seconds || 0);
+    if (sortBy === 'name') return (a.teacherName || '').localeCompare(b.teacherName || '');
+    if (sortBy === 'staffId') return (a.staffId || '').localeCompare(b.staffId || '');
+    if (sortBy === 'category') return (a.category || '').localeCompare(b.category || '');
+    return 0;
   });
 
   const handleExportCSV = () => {
@@ -875,11 +883,24 @@ export default function AdminDashboard() {
 
             {/* Submissions Table */}
             <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)', overflow: 'hidden' }}>
-              <div style={{ padding: '20px 24px', borderBottom: '1px solid #E5E7EB', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ padding: '20px 24px', borderBottom: '1px solid #E5E7EB', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
                 <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#002147', margin: 0 }}>Submitted Records</h3>
-                <span style={{ fontSize: '12px', color: '#6B7280', backgroundColor: '#F3F4F6', padding: '4px 10px', borderRadius: '12px', fontWeight: '600' }}>
-                  Showing {filteredSubmissions.length} of {totalSubmissions} records
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <select
+                    value={sortBy}
+                    onChange={e => setSortBy(e.target.value)}
+                    style={{ padding: '6px 12px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '13px', outline: 'none', color: '#374151', cursor: 'pointer' }}
+                  >
+                    <option value="newest">Sort by: Newest First</option>
+                    <option value="oldest">Sort by: Oldest First</option>
+                    <option value="name">Sort by: Name (A-Z)</option>
+                    <option value="staffId">Sort by: Staff ID</option>
+                    <option value="category">Sort by: Category</option>
+                  </select>
+                  <span style={{ fontSize: '12px', color: '#6B7280', backgroundColor: '#F3F4F6', padding: '4px 10px', borderRadius: '12px', fontWeight: '600' }}>
+                    Showing {filteredSubmissions.length} of {totalSubmissions} records
+                  </span>
+                </div>
               </div>
 
               {filteredSubmissions.length === 0 ? (
@@ -931,7 +952,7 @@ export default function AdminDashboard() {
                             />
                           </td>
                           <td style={{ padding: '16px 12px', fontWeight: '600', color: '#6B7280' }}>
-                            {index + 1}
+                            {sortBy === 'newest' ? filteredSubmissions.length - index : index + 1}
                           </td>
                           <td style={{ padding: '16px 24px', fontWeight: '600', color: '#002147' }}>
                             {sub.teacherName}
