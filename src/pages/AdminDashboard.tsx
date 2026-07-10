@@ -166,6 +166,7 @@ export default function AdminDashboard() {
   const [bulkStaffIds, setBulkStaffIds] = useState('');
   const [bulkNames, setBulkNames] = useState('');
   const [bulkMatchedSubs, setBulkMatchedSubs] = useState<any[]>([]);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [bulkNotFoundItems, setBulkNotFoundItems] = useState<string[]>([]);
 
   useEffect(() => {
@@ -195,6 +196,10 @@ export default function AdminDashboard() {
         return timeB - timeA;
       });
       setSubmissions(data);
+      setFetchError(null);
+    }, (err) => {
+      console.error("Firestore onSnapshot Error:", err);
+      setFetchError(err.message || 'Unknown Firestore Error');
     });
 
     const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
@@ -852,6 +857,14 @@ export default function AdminDashboard() {
                 />
               </div>
             </div>
+
+            {/* ERROR DISPLAY */}
+            {fetchError && (
+              <div style={{ backgroundColor: '#FEE2E2', color: '#B91C1C', padding: '16px', borderRadius: '12px', marginBottom: '20px', fontWeight: 'bold' }}>
+                Firebase Error: {fetchError}. 
+                Please ensure your database user profile 'role' is exactly 'admin'.
+              </div>
+            )}
 
             {/* Submissions Table */}
             <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)', overflow: 'hidden' }}>
