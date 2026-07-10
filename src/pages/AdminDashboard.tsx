@@ -546,6 +546,7 @@ export default function AdminDashboard() {
   // State for circuit and school bulk download
   const [downloadCircuit, setDownloadCircuit] = useState('');
   const [downloadSchool, setDownloadSchool] = useState('');
+  const [downloadRank, setDownloadRank] = useState('');
 
   const handleCleanDuplicates = () => {
     const groups: Record<string, any[]> = {};
@@ -619,8 +620,16 @@ export default function AdminDashboard() {
     await downloadZippedSubmissions(schoolSubs, `School_${downloadSchool.replace(/[^a-zA-Z0-9- _]/g, '')}_${dateStr}`);
   };
 
+  const handleBulkDownloadByRank = async () => {
+    if (!downloadRank) return alert('Please select a rank.');
+    const rankSubs = submissions.filter(s => s.currentRank === downloadRank);
+    const dateStr = new Date().toISOString().slice(0, 10);
+    await downloadZippedSubmissions(rankSubs, `Rank_${downloadRank.replace(/[^a-zA-Z0-9- _]/g, '')}_${dateStr}`);
+  };
+
   const dynamicCircuits = Array.from(new Set(schoolsData.map((s: any) => s.circuit))).sort();
   const displayCircuits = dynamicCircuits.length > 0 ? dynamicCircuits : CIRCUITS;
+  const displayRanks = Array.from(new Set(submissions.map((s: any) => s.currentRank).filter(Boolean))).sort();
 
   // Metrics calculations
   const totalSubmissions = submissions.length;
@@ -1608,6 +1617,30 @@ export default function AdminDashboard() {
                       onClick={handleBulkDownloadBySchool}
                       disabled={!downloadSchool || bulkDownloading}
                       style={{ padding: '0 16px', borderRadius: '8px', border: 'none', backgroundColor: '#002147', color: '#FFF', fontSize: '13px', fontWeight: '600', cursor: (!downloadSchool || bulkDownloading) ? 'not-allowed' : 'pointer', opacity: (!downloadSchool || bulkDownloading) ? 0.6 : 1 }}
+                    >
+                      Download ZIP
+                    </button>
+                  </div>
+                </div>
+
+                {/* Download by Current Rank */}
+                <div style={{ flex: '1 1 300px', backgroundColor: '#F9FAFB', padding: '16px', borderRadius: '12px', border: '1px solid #E5E7EB' }}>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#4B5563', textTransform: 'uppercase', marginBottom: '8px' }}>Download by Current Rank</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <select
+                      value={downloadRank}
+                      onChange={e => setDownloadRank(e.target.value)}
+                      style={{ flex: 1, padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '13px', outline: 'none', backgroundColor: '#FFF' }}
+                    >
+                      <option value="">-- Select Rank --</option>
+                      {displayRanks.map((r: any) => (
+                        <option key={r} value={r}>{r}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={handleBulkDownloadByRank}
+                      disabled={!downloadRank || bulkDownloading}
+                      style={{ padding: '0 16px', borderRadius: '8px', border: 'none', backgroundColor: '#002147', color: '#FFF', fontSize: '13px', fontWeight: '600', cursor: (!downloadRank || bulkDownloading) ? 'not-allowed' : 'pointer', opacity: (!downloadRank || bulkDownloading) ? 0.6 : 1 }}
                     >
                       Download ZIP
                     </button>
