@@ -861,8 +861,15 @@ export default function AdminDashboard() {
             {/* ERROR DISPLAY */}
             {fetchError && (
               <div style={{ backgroundColor: '#FEE2E2', color: '#B91C1C', padding: '16px', borderRadius: '12px', marginBottom: '20px', fontWeight: 'bold' }}>
-                Firebase Error: {fetchError}. 
-                Please ensure your database user profile 'role' is exactly 'admin'.
+                <p style={{ margin: '0 0 8px 0' }}>Firebase Error: {fetchError}</p>
+                <p style={{ margin: 0, fontWeight: 'normal' }}>
+                  Please ensure your database user profile 'role' is exactly 'admin'. 
+                  <br /><br />
+                  <strong>IMPORTANT:</strong> Make sure you are editing the correct document in the `users` collection! 
+                  Your current User ID (UID) is: <span style={{ fontFamily: 'monospace', backgroundColor: '#FECACA', padding: '2px 6px', borderRadius: '4px' }}>{user?.uid}</span>
+                  <br />
+                  You must find the document with THIS exact ID in Firestore, and set its <code>role</code> field to <code>admin</code>.
+                </p>
               </div>
             )}
 
