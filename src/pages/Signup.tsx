@@ -40,15 +40,6 @@ export default function Signup() {
 
     try {
       const staffIdTrimmed = staffId.trim();
-      if (staffIdTrimmed) {
-        const q = query(collection(db, 'users'), where('staffId', '==', staffIdTrimmed));
-        const snap = await getDocs(q);
-        if (!snap.empty) {
-          setError('This Staff ID is already linked to another account.');
-          setLoading(false);
-          return;
-        }
-      }
 
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       // Save role and staffId
