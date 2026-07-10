@@ -130,7 +130,7 @@ function Sel({ value, onChange, options, disabled = false }: { value: string; on
 }
 
 // ── Section Components ─────────────────────────────────────
-function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, errors, onPhotoSelect, hasSubmissions }: any) {
+function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, errors, onPhotoSelect }: any) {
   const photoRef = useRef<HTMLInputElement>(null);
   
   const upd = (key: keyof FormState) => (v: string) => {
@@ -1153,7 +1153,7 @@ export default function TeacherForm() {
   }
 
   const sectionComponents = [
-    <SectionPersonal f={form} setF={setForm} dynamicCircuits={dynamicCircuits} getSchoolsForCircuit={getSchoolsForCircuit} errors={errors} onPhotoSelect={setPassportCropFile} hasSubmissions={mySubmissions.length > 0} />,
+    <SectionPersonal f={form} setF={setForm} dynamicCircuits={dynamicCircuits} getSchoolsForCircuit={getSchoolsForCircuit} errors={errors} onPhotoSelect={setPassportCropFile} />,
     <SectionFamilyLang f={form} setF={setForm} />,
     <SectionQualifications f={form} setF={setForm} />,
     <SectionEmployment f={form} setF={setForm} />,
