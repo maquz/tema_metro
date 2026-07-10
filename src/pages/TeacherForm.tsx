@@ -163,7 +163,6 @@ function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, error
                 value={f.category} 
                 onChange={upd('category')} 
                 options={['BASIC SCHOOL', 'SENIOR HIGH SCHOOL', 'Education Office']} 
-                disabled={hasSubmissions} 
               />
             </Field>
             {errors.category && <p style={{ color: '#CE1126', fontSize: '12px', marginTop: '4px' }}>{errors.category}</p>}
@@ -835,7 +834,7 @@ export default function TeacherForm() {
       } catch (err) {
         console.error('Auto-save error:', err);
       }
-    }, 10000);
+    }, 3000);
 
     return () => clearInterval(interval);
   }, [form, editSubmissionId, currentRole, submitting, user]);
