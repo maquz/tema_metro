@@ -738,8 +738,28 @@ function FileUploadRow({ docLabel, index, filesList, onFilesChange, isOptional, 
 // ── Main App ───────────────────────────────────────────────
 export default function TeacherForm() {
   const { user, role, staffId: authStaffId, logout } = useAuth();
-  const [section, setSection] = useState<number>(0);
-  const [form, setForm] = useState<FormState>(initForm());
+  
+  const getInitialSection = () => {
+    try {
+      const saved = localStorage.getItem('tema_metro_section');
+      if (saved) {
+        const parsed = parseInt(saved, 10);
+        if (!isNaN(parsed)) return parsed;
+      }
+    } catch(e) {}
+    return 0;
+  };
+
+  const getInitialForm = () => {
+    try {
+      const saved = localStorage.getItem('tema_metro_form_draft');
+      if (saved) return JSON.parse(saved);
+    } catch(e) {}
+    return initForm();
+  };
+
+  const [section, setSection] = useState<number>(getInitialSection());
+  const [form, setForm] = useState<FormState>(getInitialForm());
   const [errors, setErrors] = useState<Partial<FormState>>({});
   const [files, setFiles] = useState<UploadFile[][]>(DOCUMENTS.map(() => []));
   const [submitting, setSubmitting] = useState(false);
@@ -751,6 +771,14 @@ export default function TeacherForm() {
 
   const totalSections = SECTIONS.length;
   const pct = ((section + 1) / totalSections) * 100;
+
+  useEffect(() => {
+    localStorage.setItem('tema_metro_form_draft', JSON.stringify(form));
+  }, [form]);
+
+  useEffect(() => {
+    localStorage.setItem('tema_metro_section', section.toString());
+  }, [section]);
 
   useEffect(() => {
     if (authStaffId) {
@@ -1111,6 +1139,8 @@ export default function TeacherForm() {
       }
 
 
+      localStorage.removeItem('tema_metro_form_draft');
+      localStorage.removeItem('tema_metro_section');
       setSubmitting(false);
       setSection(7); // Move to Success/Summary section
     } catch (error: any) {
@@ -1151,7 +1181,7 @@ export default function TeacherForm() {
   }
 
   if (section === 7) {
-    return <Summary f={form} onReset={mySubmissions.length > 0 ? undefined : () => { setForm(initForm()); setSection(0); setEditSubmissionId(null); setFiles(DOCUMENTS.map(() => [])); }} />;
+    return <Summary f={form} onReset={mySubmissions.length > 0 ? undefined : () => { localStorage.removeItem('tema_metro_form_draft'); localStorage.removeItem('tema_metro_section'); setForm(initForm()); setSection(0); setEditSubmissionId(null); setFiles(DOCUMENTS.map(() => [])); }} />;
   }
 
   const sectionComponents = [
@@ -1290,7 +1320,7 @@ export default function TeacherForm() {
           <div>
             {section > 0 && <button className="btn-back" onClick={() => { setSection(s => s - 1); window.scrollTo(0,0); }}>← Back</button>}
             {section === 0 && editSubmissionId && (
-              <button className="btn-back" onClick={() => { setEditSubmissionId(null); setForm(initForm()); setFiles(DOCUMENTS.map(() => [])); }}>Cancel Edit</button>
+              <button className="btn-back" onClick={() => { localStorage.removeItem('tema_metro_form_draft'); localStorage.removeItem('tema_metro_section'); setEditSubmissionId(null); setForm(initForm()); setFiles(DOCUMENTS.map(() => [])); }}>Cancel Edit</button>
             )}
           </div>
           <button
