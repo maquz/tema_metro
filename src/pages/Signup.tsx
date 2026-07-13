@@ -20,6 +20,13 @@ export default function Signup() {
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    
+    const staffIdTrimmed = staffId.trim();
+    if (!/^\d+$/.test(staffIdTrimmed)) {
+      setError('Staff ID must contain only numbers.');
+      return;
+    }
+
     setLoading(true);
     
     // Determine role

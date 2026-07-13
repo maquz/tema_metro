@@ -16,7 +16,7 @@ import Footer from '../components/Footer';
 import { 
   LogOut, Users, FileText, Activity, Search, Download, 
   ChevronRight, ExternalLink, BarChart3, TrendingUp, GraduationCap, Building2, ShieldCheck,
-  Pencil, Trash2, FolderDown, Plus, KeyRound, X, Save, Share2, Printer, Menu
+  Pencil, Trash2, FolderDown, Plus, KeyRound, X, Save, Share2, Printer, Menu, Phone
 } from 'lucide-react';
 
 const CIRCUITS = [
@@ -109,7 +109,7 @@ const createCombinedPDF = async (sub: any): Promise<Uint8Array | null> => {
 
 export default function AdminDashboard() {
   const { user, role, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState<'submissions' | 'users' | 'analytics' | 'schools' | 'bulk-download'>('submissions');
+  const [activeTab, setActiveTab] = useState<'submissions' | 'users' | 'analytics' | 'schools' | 'bulk-download' | 'drafts'>('submissions');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   
   // Data States
@@ -265,6 +265,11 @@ export default function AdminDashboard() {
   const validSubmissions = submissions.filter((sub: any) => {
     const isDraft = sub.status === 'draft' && (!sub.documents || sub.documents.length === 0);
     return !isDraft;
+  });
+
+  const draftSubmissions = submissions.filter((sub: any) => {
+    const isDraft = sub.status === 'draft' && (!sub.documents || sub.documents.length === 0);
+    return isDraft;
   });
 
   // Submissions Filtering logic
@@ -547,6 +552,7 @@ export default function AdminDashboard() {
   const [downloadCircuit, setDownloadCircuit] = useState('');
   const [downloadSchool, setDownloadSchool] = useState('');
   const [downloadRank, setDownloadRank] = useState('');
+  const [downloadCategory, setDownloadCategory] = useState('');
 
   const handleCleanDuplicates = () => {
     const groups: Record<string, any[]> = {};
@@ -609,8 +615,15 @@ export default function AdminDashboard() {
   const handleBulkDownloadByCircuit = async () => {
     if (!downloadCircuit) return alert('Please select a circuit.');
     const circuitSubs = submissions.filter(s => s.circuit === downloadCircuit);
-    const dateStr = new Date().toISOString().slice(0, 10);
+    const dateStr = new Date().toISOString().split('T')[0];
     await downloadZippedSubmissions(circuitSubs, `Circuit_${downloadCircuit.replace(/[^a-zA-Z0-9- _]/g, '')}_${dateStr}`);
+  };
+
+  const handleBulkDownloadByCategory = async () => {
+    if (!downloadCategory) return alert('Please select a category.');
+    const categorySubs = submissions.filter(s => s.category === downloadCategory);
+    const dateStr = new Date().toISOString().split('T')[0];
+    await downloadZippedSubmissions(categorySubs, `Category_${downloadCategory.replace(/[^a-zA-Z0-9- _]/g, '')}_${dateStr}`);
   };
 
   const handleBulkDownloadBySchool = async () => {
@@ -743,6 +756,12 @@ export default function AdminDashboard() {
               style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 16px', borderRadius: '8px', border: 'none', backgroundColor: activeTab === 'submissions' ? '#F3F4F6' : 'transparent', color: activeTab === 'submissions' ? '#002147' : '#4B5563', fontWeight: activeTab === 'submissions' ? '700' : '600', fontSize: '14px', cursor: 'pointer', transition: 'all 0.2s', textAlign: 'left', width: '100%' }}
             >
               <FileText size={18} color={activeTab === 'submissions' ? '#002147' : '#9CA3AF'} /> Submissions
+            </button>
+            <button
+              onClick={() => setActiveTab('drafts')}
+              style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 16px', borderRadius: '8px', border: 'none', backgroundColor: activeTab === 'drafts' ? '#F3F4F6' : 'transparent', color: activeTab === 'drafts' ? '#002147' : '#4B5563', fontWeight: activeTab === 'drafts' ? '700' : '600', fontSize: '14px', cursor: 'pointer', transition: 'all 0.2s', textAlign: 'left', width: '100%' }}
+            >
+              <FileText size={18} color={activeTab === 'drafts' ? '#002147' : '#9CA3AF'} /> Incomplete Drafts
             </button>
             <button
               onClick={() => setActiveTab('users')}
@@ -1071,6 +1090,88 @@ export default function AdminDashboard() {
                     </div>
                   )}
                   
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Tab CONTENT: INCOMPLETE DRAFTS */}
+        {activeTab === 'drafts' && (
+          <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)', overflow: 'hidden' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #E5E7EB', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#002147', margin: '0 0 2px' }}>Incomplete Draft Records</h3>
+                <p style={{ fontSize: '13px', color: '#6B7280', margin: 0 }}>
+                  Showing {draftSubmissions.length} abandoned/incomplete submissions
+                </p>
+              </div>
+            </div>
+
+            <div style={{ padding: '20px' }}>
+              {draftSubmissions.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '60px 20px', color: '#6B7280' }}>
+                  <FileText size={48} color="#D1D5DB" style={{ marginBottom: '16px', opacity: 0.5 }} />
+                  <div style={{ fontSize: '15px', fontWeight: '500' }}>No incomplete drafts found.</div>
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto', border: '1px solid #E5E7EB', borderRadius: '12px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                    <thead style={{ backgroundColor: '#F9FAFB', borderBottom: '2px solid #E5E7EB' }}>
+                      <tr>
+                        <th style={{ padding: '16px 12px', color: '#4B5563', fontWeight: '600' }}>S/N</th>
+                        <th style={{ padding: '16px 24px', color: '#4B5563', fontWeight: '600' }}>Teacher Name</th>
+                         <th style={{ padding: '16px 12px', color: '#4B5563', fontWeight: '600' }}>Staff ID</th>
+                        <th style={{ padding: '16px 24px', color: '#4B5563', fontWeight: '600' }}>Category</th>
+                        <th style={{ padding: '16px 24px', color: '#4B5563', fontWeight: '600' }}>School/Circuit</th>
+                        <th style={{ padding: '16px 24px', color: '#4B5563', fontWeight: '600' }}>Submitted By</th>
+                        <th style={{ padding: '16px 24px', color: '#4B5563', fontWeight: '600', textAlign: 'center' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {draftSubmissions.map((sub: any, index: number) => {
+                        return (
+                        <tr key={sub.id} style={{ borderBottom: '1px solid #F3F4F6', transition: 'background-color 0.15s' }} onMouseOver={e => e.currentTarget.style.backgroundColor = '#F9FAFB'} onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}>
+                          <td style={{ padding: '16px 12px', textAlign: 'center' }}>
+                            {index + 1}
+                          </td>
+                          <td style={{ padding: '16px 24px' }}>
+                            <div style={{ fontWeight: '700', color: '#111827', fontSize: '14px', marginBottom: '4px' }}>{sub.teacherName || sub.firstName + ' ' + sub.surname}</div>
+                            <div style={{ color: '#6B7280', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <Phone size={12} /> {sub.phoneNumber || 'N/A'}
+                            </div>
+                          </td>
+                          <td style={{ padding: '16px 12px' }}>
+                            <div style={{ fontWeight: '600', color: '#374151', letterSpacing: '0.05em' }}>{sub.staffId}</div>
+                          </td>
+                          <td style={{ padding: '16px 24px' }}>
+                            <span style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', backgroundColor: sub.category === 'Education Office' ? '#FEF3C7' : '#E0F2FE', color: sub.category === 'Education Office' ? '#92400E' : '#0369A1' }}>
+                              {sub.category || 'N/A'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '16px 24px' }}>
+                             <div style={{ fontWeight: '600', color: '#111827', marginBottom: '2px' }}>{sub.school || 'N/A'}</div>
+                             <div style={{ fontSize: '11px', color: '#6B7280' }}>{sub.circuit || 'N/A'}</div>
+                          </td>
+                          <td style={{ padding: '16px 24px' }}>
+                            <div style={{ color: '#4B5563', fontSize: '12px' }}>{sub.submittedByEmail || 'N/A'}</div>
+                          </td>
+                          <td style={{ padding: '16px 24px', textAlign: 'center' }}>
+                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                              <button
+                                onClick={() => setDeleteSub(sub)}
+                                title="Delete record"
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', border: 'none', backgroundColor: '#CE1126', color: '#FFF', padding: '6px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                              >
+                                <Trash2 size={14} /> Delete 
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>
@@ -1603,6 +1704,30 @@ export default function AdminDashboard() {
                   </div>
                 </div>
 
+                {/* Download by Category */}
+                <div style={{ flex: '1 1 300px', backgroundColor: '#F9FAFB', padding: '16px', borderRadius: '12px', border: '1px solid #E5E7EB' }}>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#4B5563', textTransform: 'uppercase', marginBottom: '8px' }}>Download by Category</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <select
+                      value={downloadCategory}
+                      onChange={e => setDownloadCategory(e.target.value)}
+                      style={{ flex: 1, padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #D1D5DB', fontSize: '13px', outline: 'none', backgroundColor: '#FFF' }}
+                    >
+                      <option value="">-- Select Category --</option>
+                      <option value="Basic">Basic</option>
+                      <option value="Senior High">Senior High</option>
+                      <option value="Education Office">Education Office</option>
+                    </select>
+                    <button
+                      onClick={handleBulkDownloadByCategory}
+                      disabled={!downloadCategory || bulkDownloading}
+                      style={{ padding: '0 16px', borderRadius: '8px', border: 'none', backgroundColor: '#002147', color: '#FFF', fontSize: '13px', fontWeight: '600', cursor: (!downloadCategory || bulkDownloading) ? 'not-allowed' : 'pointer', opacity: (!downloadCategory || bulkDownloading) ? 0.6 : 1 }}
+                    >
+                      Download ZIP
+                    </button>
+                  </div>
+                </div>
+
                 {/* Download by School */}
                 <div style={{ flex: '1 1 300px', backgroundColor: '#F9FAFB', padding: '16px', borderRadius: '12px', border: '1px solid #E5E7EB' }}>
                   <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#4B5563', textTransform: 'uppercase', marginBottom: '8px' }}>Download by School</label>
@@ -1741,8 +1866,10 @@ export default function AdminDashboard() {
         {activeTab === 'analytics' && (() => {
           const validSubmissions = submissions.filter((s: any) => s.status !== 'draft');
           const totalSubmissions = validSubmissions.length;
-          const schoolSubs = validSubmissions.filter((s: any) => s.category !== 'Education Office').length;
+          const draftCount = submissions.length - validSubmissions.length;
+          
           const officeSubs = validSubmissions.filter((s: any) => s.category === 'Education Office').length;
+          
           const teacherCount = users.filter((u: any) => !u.role || u.role === 'teacher').length;
           const metroCount = users.filter((u: any) => u.role === 'metro_officer').length;
           const adminCount = users.filter((u: any) => u.role === 'admin' || u.role === 'editor').length;
@@ -1755,11 +1882,25 @@ export default function AdminDashboard() {
           const maxCircuit = circuitEntries[0]?.[1] || 1;
 
           const submitterMap: Record<string, number> = {};
-          submissions.forEach((s: any) => {
+          validSubmissions.forEach((s: any) => {
             if (s.submittedByEmail) submitterMap[s.submittedByEmail] = (submitterMap[s.submittedByEmail] || 0) + 1;
           });
           const topSubmitters = Object.entries(submitterMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
           const maxSubmitter = topSubmitters[0]?.[1] || 1;
+
+          const categoryMap: Record<string, number> = {};
+          validSubmissions.forEach((s: any) => {
+            if (s.category) categoryMap[s.category] = (categoryMap[s.category] || 0) + 1;
+          });
+          const categoryEntries = Object.entries(categoryMap).sort((a, b) => b[1] - a[1]);
+          const maxCategory = categoryEntries[0]?.[1] || 1;
+
+          const rankMap: Record<string, number> = {};
+          validSubmissions.forEach((s: any) => {
+            if (s.currentRank) rankMap[s.currentRank] = (rankMap[s.currentRank] || 0) + 1;
+          });
+          const rankEntries = Object.entries(rankMap).sort((a, b) => b[1] - a[1]);
+          const maxRank = rankEntries[0]?.[1] || 1;
 
           const kpiCard = (icon: React.ReactNode, label: string, value: string | number, accent: string, sub?: string) => (
             <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '20px 24px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', borderLeft: `4px solid ${accent}`, display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -1776,9 +1917,9 @@ export default function AdminDashboard() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
               {/* KPI Cards */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
-                {kpiCard(<TrendingUp size={22} />, 'Total Staff Updated', totalSubmissions, '#002147', 'all time')}
-                {kpiCard(<FileText size={22} />, 'School Records', schoolSubs, '#0369A1', `${totalSubmissions ? Math.round(schoolSubs / totalSubmissions * 100) : 0}% of total`)}
-                {kpiCard(<Building2 size={22} />, 'Education Office', officeSubs, '#B45309', `${totalSubmissions ? Math.round(officeSubs / totalSubmissions * 100) : 0}% of total`)}
+                {kpiCard(<TrendingUp size={22} />, 'Total Completed', totalSubmissions, '#002147', 'valid submissions')}
+                {kpiCard(<FileText size={22} />, 'Incomplete Drafts', draftCount, '#CE1126', 'abandoned/in-progress')}
+                {kpiCard(<Building2 size={22} />, 'Education Office', officeSubs, '#B45309', `${totalSubmissions ? Math.round(officeSubs / totalSubmissions * 100) : 0}% of completed`)}
                 {kpiCard(<Users size={22} />, 'Registered Users', totalUsers, '#065F46', `${activeUsersCount} currently online`)}
               </div>
 
@@ -1803,6 +1944,51 @@ export default function AdminDashboard() {
                     </div>
                   ))}
                 </div>
+              </div>
+
+              {/* Breakdown by Category & Rank */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '24px' }}>
+                {/* Category Breakdown */}
+                {categoryEntries.length > 0 && (
+                  <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
+                      <BarChart3 size={18} color="#002147" />
+                      <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#002147' }}>Submissions by Category</h3>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {categoryEntries.map(([category, count]) => (
+                        <div key={category} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <div style={{ width: '120px', fontSize: '12px', fontWeight: '600', color: '#4B5563', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{category}</div>
+                          <div style={{ flex: 1, height: '8px', backgroundColor: '#F3F4F6', borderRadius: '4px', overflow: 'hidden' }}>
+                            <div style={{ height: '100%', backgroundColor: '#0369A1', width: `${(count / maxCategory) * 100}%`, borderRadius: '4px' }}></div>
+                          </div>
+                          <div style={{ width: '40px', textAlign: 'right', fontSize: '12px', fontWeight: '700', color: '#111827' }}>{count}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Rank Breakdown */}
+                {rankEntries.length > 0 && (
+                  <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
+                      <BarChart3 size={18} color="#002147" />
+                      <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#002147' }}>Submissions by Rank</h3>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {rankEntries.slice(0, 10).map(([rank, count]) => (
+                        <div key={rank} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <div style={{ width: '150px', fontSize: '12px', fontWeight: '600', color: '#4B5563', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={rank}>{rank}</div>
+                          <div style={{ flex: 1, height: '8px', backgroundColor: '#F3F4F6', borderRadius: '4px', overflow: 'hidden' }}>
+                            <div style={{ height: '100%', backgroundColor: '#B45309', width: `${(count / maxRank) * 100}%`, borderRadius: '4px' }}></div>
+                          </div>
+                          <div style={{ width: '40px', textAlign: 'right', fontSize: '12px', fontWeight: '700', color: '#111827' }}>{count}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Submissions by Circuit */}

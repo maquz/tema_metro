@@ -85,6 +85,15 @@ export default function Login() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    const staffIdTrimmed = staffId.trim();
+    // In login, staffId might be empty if the user is not a teacher (or if they are an admin).
+    // If they provided a staff ID, it must be numbers only.
+    if (staffIdTrimmed && !/^\d+$/.test(staffIdTrimmed)) {
+      setError('Staff ID must contain only numbers.');
+      return;
+    }
+
     setLoading(true);
 
     try {
