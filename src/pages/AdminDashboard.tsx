@@ -16,7 +16,7 @@ import Footer from '../components/Footer';
 import { 
   LogOut, Users, FileText, Activity, Search, Download, 
   ChevronRight, ExternalLink, BarChart3, TrendingUp, GraduationCap, Building2, ShieldCheck,
-  Pencil, Trash2, FolderDown, Plus, KeyRound, X, Save, Share2, Printer, Menu, Phone
+  Pencil, Trash2, FolderDown, Plus, KeyRound, X, Save, Share2, Printer, Menu, Phone, Eye
 } from 'lucide-react';
 
 const CIRCUITS = [
@@ -1158,6 +1158,20 @@ export default function AdminDashboard() {
                           </td>
                           <td style={{ padding: '16px 24px', textAlign: 'center' }}>
                             <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                              <button
+                                onClick={() => setSelectedSub(sub)}
+                                title="View record details"
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', border: 'none', backgroundColor: '#F3F4F6', color: '#374151', padding: '6px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                              >
+                                <Eye size={14} /> View
+                              </button>
+                              <button
+                                onClick={() => handleOpenEdit(sub)}
+                                title="Edit record"
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', border: 'none', backgroundColor: '#E0F2FE', color: '#0369A1', padding: '6px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                              >
+                                <Pencil size={14} /> Edit
+                              </button>
                               <button
                                 onClick={() => setDeleteSub(sub)}
                                 title="Delete record"

@@ -109,11 +109,12 @@ interface ExistingFile {
 type UploadFile = File | ExistingFile;
 
 // ── Input helpers ──────────────────────────────────────────
-function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+function Field({ label, required, error, children }: { label: string; required?: boolean; error?: string; children: React.ReactNode }) {
   return (
     <div>
       <div className="field-label">{label}{required && <span className="required">*</span>}</div>
       {children}
+      {error && <p style={{ color: '#CE1126', fontSize: '12px', marginTop: '4px', marginBottom: '-4px' }}>{error}</p>}
     </div>
   );
 }
@@ -215,7 +216,7 @@ function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, error
         )}
 
         <div className="form-row cols-1">
-          <Field label="Current Rank" required><Sel value={f.currentRank} onChange={upd('currentRank')} options={['Director II', 'Deputy Director', 'Assistant Director I', 'Assistant Director II', 'Principal Superintendent', 'Senior Superintendent I', 'Senior Superintendent II', 'Superintendent I', 'Superintendent II', 'Pupil Teacher']} /></Field>
+          <Field label="Current Rank" required error={errors.currentRank}><Sel value={f.currentRank} onChange={upd('currentRank')} options={['Director II', 'Deputy Director', 'Assistant Director I', 'Assistant Director II', 'Principal Superintendent', 'Senior Superintendent I', 'Senior Superintendent II', 'Superintendent I', 'Superintendent II', 'Pupil Teacher']} /></Field>
         </div>
       </div>
 
@@ -223,10 +224,11 @@ function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, error
       <div className="form-card">
         <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
           <div>
-            <div className="field-label">Passport Photo</div>
-            <div className="photo-box" onClick={() => photoRef.current?.click()}>
+            <div className="field-label">Passport Photo<span className="required">*</span></div>
+            <div className="photo-box" onClick={() => photoRef.current?.click()} style={errors.photoUrl ? { borderColor: '#CE1126', backgroundColor: '#FDF2F2' } : {}}>
               {f.photoUrl ? <img src={f.photoUrl} alt="passport" /> : <><span style={{ fontSize: 24 }}>📷</span><span>Tap to upload</span></>}
             </div>
+            {errors.photoUrl && <p style={{ color: '#CE1126', fontSize: '12px', marginTop: '4px', marginBottom: '-4px' }}>{errors.photoUrl}</p>}
             <input ref={photoRef} type="file" accept="image/*" style={{ display: 'none' }}
               onChange={e => {
                 const file = e.target.files?.[0];
@@ -236,9 +238,9 @@ function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, error
               }} />
           </div>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <Field label="First Name" required><Inp value={f.firstName} onChange={upd('firstName')} placeholder="First name" /></Field>
+            <Field label="First Name" required error={errors.firstName}><Inp value={f.firstName} onChange={upd('firstName')} placeholder="First name" /></Field>
             <Field label="Other Name(s)"><Inp value={f.otherNames} onChange={upd('otherNames')} placeholder="Other names" /></Field>
-            <Field label="Surname" required><Inp value={f.surname} onChange={upd('surname')} placeholder="Surname" /></Field>
+            <Field label="Surname" required error={errors.surname}><Inp value={f.surname} onChange={upd('surname')} placeholder="Surname" /></Field>
           </div>
         </div>
 
@@ -247,12 +249,12 @@ function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, error
           <Field label="Sex"><Sel value={f.sex} onChange={upd('sex')} options={['Male', 'Female']} /></Field>
         </div>
         <div className="form-row cols-2">
-          <Field label="Reg. No."><Inp value={f.regNo} onChange={upd('regNo')} placeholder="Reg. No." /></Field>
-          <Field label="Staff ID"><Inp value={f.staffId} onChange={() => {}} placeholder="Auto-filled from Registration" disabled /></Field>
+          <Field label="Reg. No." required error={errors.regNo}><Inp value={f.regNo} onChange={upd('regNo')} placeholder="Reg. No." /></Field>
+          <Field label="Staff ID" required error={errors.staffId}><Inp value={f.staffId} onChange={() => {}} placeholder="Auto-filled from Registration" disabled /></Field>
         </div>
 
         <div className="form-row cols-2">
-          <Field label="Date of Birth" required><Inp value={f.dob} onChange={upd('dob')} type="date" /></Field>
+          <Field label="Date of Birth" required error={errors.dob}><Inp value={f.dob} onChange={upd('dob')} type="date" /></Field>
           <Field label="Nationality"><Inp value={f.nationality} onChange={upd('nationality')} placeholder="e.g. Ghanaian" /></Field>
         </div>
         <div className="form-row cols-1">
@@ -262,12 +264,12 @@ function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, error
           <Field label="Address"><Inp value={f.address} onChange={upd('address')} placeholder="Residential address" /></Field>
         </div>
         <div className="form-row cols-2">
-          <Field label="Mobile No."><Inp value={f.mobile} onChange={upd('mobile')} type="tel" placeholder="0XX XXX XXXX" /></Field>
-          <Field label="Email"><Inp value={f.email} onChange={upd('email')} type="email" placeholder="email@example.com" /></Field>
+          <Field label="Mobile No." required error={errors.mobile}><Inp value={f.mobile} onChange={upd('mobile')} type="tel" placeholder="0XX XXX XXXX" /></Field>
+          <Field label="Email" required error={errors.email}><Inp value={f.email} onChange={upd('email')} type="email" placeholder="email@example.com" /></Field>
         </div>
         <div className="form-row cols-2">
           <Field label="SSF No."><Inp value={f.ssfNo} onChange={upd('ssfNo')} placeholder="SSF No." /></Field>
-          <Field label="NIA No."><Inp value={f.niaNo} onChange={upd('niaNo')} placeholder="NIA No." /></Field>
+          <Field label="NIA No." required error={errors.niaNo}><Inp value={f.niaNo} onChange={upd('niaNo')} placeholder="NIA No." /></Field>
         </div>
         <div className="form-row cols-2">
           <Field label="Driving Licence No."><Inp value={f.drivingLicence} onChange={upd('drivingLicence')} placeholder="Driving Licence No." /></Field>
@@ -504,7 +506,7 @@ function SectionNameSig({ f, setF }: { f: FormState; setF: React.Dispatch<React.
   );
 }
 
-export function Summary({ f, onReset, isPreview = false }: { f: FormState; onReset?: () => void; isPreview?: boolean }) {
+export function Summary({ f, onReset, isPreview = false, onGoDashboard, onLogout }: { f: FormState; onReset?: () => void; isPreview?: boolean; onGoDashboard?: () => void; onLogout?: () => void; }) {
   const row = (label: string, val: string) => val ? (
     <div className="summary-item">
       <span className="summary-key">{label}</span>
@@ -623,9 +625,11 @@ export function Summary({ f, onReset, isPreview = false }: { f: FormState; onRes
         </div>
       )}
 
-      {!isPreview && onReset && (
-        <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 600, background: 'white', borderTop: '1px solid #e5e7eb', padding: '12px 16px' }}>
-          <button onClick={onReset} style={{ width: '100%', padding: 12, background: '#002147', color: 'white', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>Start New Record</button>
+      {!isPreview && (onReset || onGoDashboard || onLogout) && (
+        <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 600, background: 'white', borderTop: '1px solid #e5e7eb', padding: '12px 16px', display: 'flex', gap: '8px' }}>
+          {onReset && <button onClick={onReset} style={{ flex: 1, padding: 12, background: '#002147', color: 'white', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Start New Record</button>}
+          {onGoDashboard && <button onClick={onGoDashboard} style={{ flex: 1, padding: 12, background: '#F59E0B', color: 'white', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Dashboard</button>}
+          {onLogout && <button onClick={onLogout} style={{ flex: 1, padding: 12, background: '#E5E7EB', color: '#374151', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Log Out</button>}
         </div>
       )}
     </div>
@@ -881,6 +885,17 @@ export default function TeacherForm() {
       if (!form.school) e.school = 'Required';
       if (!form.subject) e.subject = 'Required';
     }
+    
+    if (!form.firstName || form.firstName.trim() === '') e.firstName = 'Required';
+    if (!form.surname || form.surname.trim() === '') e.surname = 'Required';
+    if (!form.currentRank) e.currentRank = 'Required';
+    if (!form.photoUrl) e.photoUrl = 'Photo Required';
+    if (!form.regNo || form.regNo.trim() === '') e.regNo = 'Required';
+    if (!form.dob) e.dob = 'Required';
+    if (!form.mobile || form.mobile.trim() === '') e.mobile = 'Required';
+    if (!form.email || form.email.trim() === '') e.email = 'Required';
+    if (!form.niaNo || form.niaNo.trim() === '') e.niaNo = 'Required';
+
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -1181,7 +1196,12 @@ export default function TeacherForm() {
   }
 
   if (section === 7) {
-    return <Summary f={form} onReset={mySubmissions.length > 0 ? undefined : () => { localStorage.removeItem('tema_metro_form_draft'); localStorage.removeItem('tema_metro_section'); setForm(initForm()); setSection(0); setEditSubmissionId(null); setFiles(DOCUMENTS.map(() => [])); }} />;
+    return <Summary 
+      f={form} 
+      onReset={() => { localStorage.removeItem('tema_metro_form_draft'); localStorage.removeItem('tema_metro_section'); setForm(initForm()); setSection(0); setEditSubmissionId(null); setFiles(DOCUMENTS.map(() => [])); }} 
+      onGoDashboard={() => { setSection(0); setEditSubmissionId(null); }} 
+      onLogout={logout} 
+    />;
   }
 
   const sectionComponents = [
