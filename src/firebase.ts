@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { initializeFirestore } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 import { initializeAuth, browserLocalPersistence } from 'firebase/auth';
 
 const firebaseConfig = {
@@ -13,7 +13,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 
 export const db = initializeFirestore(app, {
-  experimentalForceLongPolling: true,
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
 });
 
 export const auth = initializeAuth(app, {

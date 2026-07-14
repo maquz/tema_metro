@@ -143,7 +143,7 @@ export default function AdminDashboard() {
 
   // Delete confirmation state
   const [deleteSub, setDeleteSub] = useState<any | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  const [deleting] = useState(false);
 
   // Download state
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
@@ -402,17 +402,17 @@ export default function AdminDashboard() {
     setEditSaving(false);
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!deleteSub) return;
-    setDeleting(true);
-    try {
-      await deleteDoc(doc(db, 'submissions', deleteSub.id));
-      setDeleteSub(null);
-    } catch (err) {
+    const subToDelete = deleteSub;
+    setDeleteSub(null); // Optimistic UI: close modal instantly
+    
+    // Deletion runs in the background. With localCache enabled,
+    // onSnapshot will instantly update the UI.
+    deleteDoc(doc(db, 'submissions', subToDelete.id)).catch(err => {
       console.error('Error deleting submission:', err);
       alert('Failed to delete record. Please try again.');
-    }
-    setDeleting(false);
+    });
   };
 
   const handleDownloadAll = async (sub: any) => {

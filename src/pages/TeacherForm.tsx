@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { CheckCircle, User, FileText, Upload, X, LogOut, ShieldAlert } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
-import jsPDF from 'jspdf';
+
 import { collection, addDoc, updateDoc, getDocs, doc, serverTimestamp, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
@@ -965,17 +965,12 @@ export default function TeacherForm() {
         throw new Error('MISSING_CLOUDINARY_CONFIG');
       }
 
-      const uploadedFiles = [];
+      setSubmittingText(`Uploading ${flatFiles.length} documents...`);
 
-      for (let i = 0; i < flatFiles.length; i++) {
-        const { file, documentType } = flatFiles[i];
-        
+      const uploadPromises = flatFiles.map(async ({ file, documentType }) => {
         if ('isExisting' in file) {
-          uploadedFiles.push({ documentType, downloadURL: file.downloadURL, fileName: file.fileName });
-          continue;
+          return { documentType, downloadURL: file.downloadURL, fileName: file.fileName };
         }
-
-        setSubmittingText(`Uploading document ${i + 1} of ${flatFiles.length}...`);
 
         let fileToUpload = file as File;
         let ext = fileToUpload.name.split('.').pop()?.toLowerCase() || 'pdf';
@@ -987,49 +982,10 @@ export default function TeacherForm() {
             useWebWorker: true,
           };
           try {
-            const compressedFile = await imageCompression(fileToUpload, options);
-
-            const base64Data = await new Promise<string>((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => resolve(reader.result as string);
-              reader.onerror = reject;
-              reader.readAsDataURL(compressedFile);
-            });
-
-            const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-              const image = new Image();
-              image.onload = () => resolve(image);
-              image.onerror = reject;
-              image.src = base64Data;
-            });
-
-            const pageW = 210;
-            const pageH = 297;
-            const margin = 10;
-            const maxW = pageW - margin * 2;
-            const maxH = pageH - margin * 2;
-
-            const imgAspect = img.naturalWidth / img.naturalHeight;
-            let drawW = maxW;
-            let drawH = drawW / imgAspect;
-            if (drawH > maxH) {
-              drawH = maxH;
-              drawW = drawH * imgAspect;
-            }
-
-            const offsetX = (pageW - drawW) / 2;
-            const offsetY = (pageH - drawH) / 2;
-
-            const imgFormat = compressedFile.type === 'image/png' ? 'PNG' : 'JPEG';
-
-            const pdf = new jsPDF({ orientation: drawW > drawH ? 'landscape' : 'portrait', unit: 'mm', format: 'a4' });
-            pdf.addImage(base64Data, imgFormat, offsetX, offsetY, drawW, drawH);
-
-            const pdfBlob = pdf.output('blob');
-            fileToUpload = new File([pdfBlob], file.name.replace(/\.[^/.]+$/, '') + '.pdf', { type: 'application/pdf' });
-            ext = 'pdf';
+            fileToUpload = await imageCompression(fileToUpload, options);
+            ext = fileToUpload.type.split('/')[1] === 'png' ? 'png' : 'jpg';
           } catch (error) {
-            console.error('PDF conversion error:', error);
+            console.error('Image compression error:', error);
           }
         }
 
@@ -1048,7 +1004,8 @@ export default function TeacherForm() {
           : `ges-tema/${form.circuit}/${form.school}/${form.teacherName}`;
         formData.append('folder', folderPath);
 
-        const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/raw/upload`, {
+        const resourceType = renamedFile.type.startsWith('image/') ? 'image' : 'raw';
+        const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`, {
           method: 'POST',
           body: formData,
         });
@@ -1059,14 +1016,14 @@ export default function TeacherForm() {
         }
 
         const data = await response.json();
-        const downloadURL = data.secure_url;
-
-        uploadedFiles.push({
+        return {
           documentType,
-          downloadURL,
+          downloadURL: data.secure_url,
           fileName: newFilename,
-        });
-      }
+        };
+      });
+
+      const uploadedFiles = await Promise.all(uploadPromises);
 
       setSubmittingText('Saving to database...');
 
