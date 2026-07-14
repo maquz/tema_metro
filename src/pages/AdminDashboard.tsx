@@ -139,7 +139,7 @@ export default function AdminDashboard() {
   // Edit modal state
   const [editSub, setEditSub] = useState<any | null>(null);
   const [editForm, setEditForm] = useState<any>({});
-  const [editSaving, setEditSaving] = useState(false);
+  const [editSaving] = useState(false);
 
   // Delete confirmation state
   const [deleteSub, setDeleteSub] = useState<any | null>(null);
@@ -388,18 +388,17 @@ export default function AdminDashboard() {
     });
   };
 
-  const handleSaveEdit = async () => {
+  const handleSaveEdit = () => {
     if (!editSub) return;
-    setEditSaving(true);
-    try {
-      const subRef = doc(db, 'submissions', editSub.id);
-      await updateDoc(subRef, editForm);
-      setEditSub(null);
-    } catch (err) {
+    const subToUpdate = editSub;
+    const dataToUpdate = editForm;
+    setEditSub(null); // Optimistic UI: close modal instantly
+    
+    // Update runs in the background
+    updateDoc(doc(db, 'submissions', subToUpdate.id), dataToUpdate).catch(err => {
       console.error('Error updating submission:', err);
       alert(`Failed to save changes: ${(err as any).message || 'Please try again.'}`);
-    }
-    setEditSaving(false);
+    });
   };
 
   const handleDelete = () => {
