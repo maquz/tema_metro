@@ -122,6 +122,7 @@ export default function AdminDashboard() {
   
   // Filtering & Search States
   const [searchTerm, setSearchTerm] = useState('');
+  const [draftSearchTerm, setDraftSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
   const [filterCircuit, setFilterCircuit] = useState('');
   const filterSubject = '';
@@ -270,6 +271,14 @@ export default function AdminDashboard() {
   const draftSubmissions = submissions.filter((sub: any) => {
     const isDraft = sub.status === 'draft' && (!sub.documents || sub.documents.length === 0);
     return isDraft;
+  });
+
+  const filteredDrafts = draftSubmissions.filter((sub: any) => {
+    const matchesSearch = draftSearchTerm === '' ? true : (
+      (sub.teacherName?.toLowerCase() || '').includes(draftSearchTerm.toLowerCase()) ||
+      (sub.staffId?.toLowerCase() || '').includes(draftSearchTerm.toLowerCase())
+    );
+    return matchesSearch;
   });
 
   // Submissions Filtering logic
@@ -1102,13 +1111,23 @@ export default function AdminDashboard() {
               <div>
                 <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#002147', margin: '0 0 2px' }}>Incomplete Draft Records</h3>
                 <p style={{ fontSize: '13px', color: '#6B7280', margin: 0 }}>
-                  Showing {draftSubmissions.length} abandoned/incomplete submissions
+                  Showing {filteredDrafts.length} abandoned/incomplete submissions
                 </p>
+              </div>
+              <div style={{ position: 'relative' }}>
+                <Search size={16} color="#9CA3AF" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                <input 
+                  type="text" 
+                  placeholder="Search drafts..." 
+                  value={draftSearchTerm} 
+                  onChange={(e) => setDraftSearchTerm(e.target.value)} 
+                  style={{ padding: '8px 12px 8px 36px', border: '1px solid #D1D5DB', borderRadius: '8px', fontSize: '14px', width: '250px' }}
+                />
               </div>
             </div>
 
             <div style={{ padding: '20px' }}>
-              {draftSubmissions.length === 0 ? (
+              {filteredDrafts.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '60px 20px', color: '#6B7280' }}>
                   <FileText size={48} color="#D1D5DB" style={{ marginBottom: '16px', opacity: 0.5 }} />
                   <div style={{ fontSize: '15px', fontWeight: '500' }}>No incomplete drafts found.</div>
@@ -1128,7 +1147,7 @@ export default function AdminDashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {draftSubmissions.map((sub: any, index: number) => {
+                      {filteredDrafts.map((sub: any, index: number) => {
                         return (
                         <tr key={sub.id} style={{ borderBottom: '1px solid #F3F4F6', transition: 'background-color 0.15s' }} onMouseOver={e => e.currentTarget.style.backgroundColor = '#F9FAFB'} onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}>
                           <td style={{ padding: '16px 12px', textAlign: 'center' }}>
