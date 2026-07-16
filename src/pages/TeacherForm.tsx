@@ -1025,20 +1025,14 @@ export default function TeacherForm() {
 
       const uploadedFiles = await Promise.all(uploadPromises);
 
-      setSubmittingText('Saving to database...');
-
       // Upload passport photo to Cloudinary if it's a base64 string (not already a URL)
       let passportPhotoUrl = '';
       if (form.photoUrl && form.photoUrl.startsWith('data:')) {
         try {
           setSubmittingText('Uploading passport photo...');
-          // Convert base64 to blob
-          const byteString = atob(form.photoUrl.split(',')[1]);
-          const mimeType = form.photoUrl.split(',')[0].split(':')[1].split(';')[0];
-          const ab = new ArrayBuffer(byteString.length);
-          const ia = new Uint8Array(ab);
-          for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
-          const photoBlob = new Blob([ab], { type: mimeType });
+          // Convert base64 data URL to blob using fetch natively (much faster than atob loop)
+          const res = await fetch(form.photoUrl);
+          const photoBlob = await res.blob();
           const photoFile = new File([photoBlob], `${sanitizeForFilename(form.staffId || 'NO_ID')}_${sanitizeForFilename(form.teacherName || form.firstName)}_Passport.jpg`, { type: 'image/jpeg' });
 
           const photoFormData = new FormData();
@@ -1064,6 +1058,8 @@ export default function TeacherForm() {
         // Already a Cloudinary URL from a previous submission
         passportPhotoUrl = form.photoUrl;
       }
+
+      setSubmittingText('Saving to database...');
 
       // Strip base64 photoUrl — never write large base64 strings to Firestore
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
