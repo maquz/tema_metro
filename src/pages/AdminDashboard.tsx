@@ -663,7 +663,7 @@ export default function AdminDashboard() {
   const activeUsersCount = users.filter(isUserActive).length;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: '#F3F4F6', color: '#111827', fontFamily: 'system-ui, sans-serif' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', width: '100%', overflowX: 'hidden', backgroundColor: '#F3F4F6', color: '#111827', fontFamily: 'system-ui, sans-serif' }}>
       {/* Bulk Download Progress Modal */}
       {bulkDownloading && bulkZipProgress && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -682,7 +682,7 @@ export default function AdminDashboard() {
       )}
 
       {/* Top Banner Header */}
-      <header style={{ position: 'sticky', top: 0, background: '#002147', color: '#FFFFFF', padding: '12px 24px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 50 }}>
+      <header className="admin-header" style={{ position: 'sticky', top: 0, background: '#002147', color: '#FFFFFF', padding: '12px 24px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 50 }}>
         {/* Left: Hamburger + Logo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{ background: 'none', border: 'none', color: '#FFF', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '4px' }} onMouseOver={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'} onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}>
@@ -698,7 +698,7 @@ export default function AdminDashboard() {
             <div style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2px', overflow: 'hidden' }}>
               <img src="/logo.png" alt="GES Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
             </div>
-            <div style={{}}>
+            <div className="hide-on-mobile">
               <h1 style={{ fontSize: '16px', fontWeight: '800', margin: 0, lineHeight: '1.1' }}>Tema Metro Directorate</h1>
               <div style={{ fontSize: '11px', color: '#CE1126', fontWeight: '700', textTransform: 'uppercase' }}>Admin Panel</div>
             </div>
@@ -706,7 +706,7 @@ export default function AdminDashboard() {
         </div>
         
         {/* Center: Global Search */}
-        <div style={{ flex: '0 1 500px', margin: '0 24px', position: 'relative' }}>
+        <div className="admin-header-center" style={{ flex: '0 1 500px', margin: '0 24px', position: 'relative' }}>
           <Search size={16} color="#6B7280" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
           <input 
             type="text" 
@@ -720,7 +720,7 @@ export default function AdminDashboard() {
         {/* Right: User + Actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-            <span style={{ fontSize: '13px', fontWeight: '600' }}>{user?.email}</span>
+            <span className="hide-on-mobile" style={{ fontSize: '13px', fontWeight: '600' }}>{user?.email}</span>
             <span style={{ fontSize: '10px', backgroundColor: '#CE1126', color: '#FFF', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold', textTransform: 'uppercase', marginTop: '2px' }}>
               {role}
             </span>
@@ -732,7 +732,7 @@ export default function AdminDashboard() {
               onMouseOver={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.2)'}
               onMouseOut={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'}
             >
-              <FileText size={14} /> <span>Submission Form</span>
+              <FileText size={14} /> <span className="hide-on-mobile">Submission Form</span>
             </button>
             <button 
               onClick={logout}
@@ -791,7 +791,7 @@ export default function AdminDashboard() {
         </aside>
 
         {/* Main Content */}
-        <main style={{ flex: 1, overflowY: 'auto', padding: '32px' }}>
+        <main className="admin-main-content" style={{ flex: 1, overflowY: 'auto', padding: '32px', minWidth: 0 }}>
           
           {/* Stats Overview */}
           <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '24px', gap: '16px' }}>
