@@ -150,7 +150,7 @@ function SectionPersonal({ f, setF, dynamicCircuits, getSchoolsForCircuit, error
   const isSchool = f.category === 'BASIC SCHOOL' || f.category === 'SENIOR HIGH SCHOOL';
 
   return (
-    <div style={{ paddingBottom: 80 }}>
+    <div style={{ paddingBottom: 16 }}>
       <div className="form-card">
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px' }}>
           <User size={16} color="#002147" />
@@ -288,7 +288,7 @@ function SectionFamilyLang({ f, setF }: { f: FormState; setF: React.Dispatch<Rea
   const upd = (key: keyof FormState) => (v: string) => setF(p => ({ ...p, [key]: v.toUpperCase() }));
   const updChild = (i: number, key: keyof Child, v: string) => setF((p: FormState) => { const c = [...p.children]; c[i] = { ...c[i], [key]: v }; return { ...p, children: c }; });
   return (
-    <div style={{ paddingBottom: 80 }}>
+    <div style={{ paddingBottom: 16 }}>
       <div className="section-title">Next of Kin</div>
       <div className="form-card">
         <div className="form-row cols-1">
@@ -390,7 +390,7 @@ function DynTable<T extends Record<string, string>>({
 function SectionQualifications({ f, setF }: { f: FormState; setF: React.Dispatch<React.SetStateAction<FormState>> }) {
   const upd = (key: keyof FormState) => (v: string) => setF(p => ({ ...p, [key]: v }));
   return (
-    <div style={{ paddingBottom: 80 }}>
+    <div style={{ paddingBottom: 16 }}>
       <div className="section-title">Academic Qualifications</div>
       <div className="form-card">
         <DynTable
@@ -449,7 +449,7 @@ function SectionQualifications({ f, setF }: { f: FormState; setF: React.Dispatch
 
 function SectionEmployment({ f, setF }: { f: FormState; setF: React.Dispatch<React.SetStateAction<FormState>> }) {
   return (
-    <div style={{ paddingBottom: 80 }}>
+    <div style={{ paddingBottom: 16 }}>
       <div className="form-card">
         <p style={{ fontSize: 12, color: '#6b7280', marginTop: 0, lineHeight: 1.5 }}>
           Indicate where appropriate any break or discontinuance of services (study leave, maternity leave, sick leave, resignation, dismissal, suspension etc.) with dates.
@@ -472,7 +472,7 @@ function SectionEmployment({ f, setF }: { f: FormState; setF: React.Dispatch<Rea
 function SectionNameSig({ f, setF }: { f: FormState; setF: React.Dispatch<React.SetStateAction<FormState>> }) {
   const upd = (key: keyof FormState) => (v: string) => setF(p => ({ ...p, [key]: v }));
   return (
-    <div style={{ paddingBottom: 80 }}>
+    <div style={{ paddingBottom: 16 }}>
       <div className="section-title">Name Change (if applicable)</div>
       <div className="form-card">
         <DynTable

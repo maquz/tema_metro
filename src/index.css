@@ -32,7 +32,7 @@ select.field-input { appearance: none; background-image: url("data:image/svg+xml
 .form-row.cols-1 { grid-template-columns: 1fr; }
 
 .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-table.dyn-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 400px; }
+table.dyn-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 500px; }
 table.dyn-table th { background: #002147; color: white; padding: 7px 8px; text-align: left; font-size: 11px; font-weight: 600; white-space: nowrap; }
 table.dyn-table td { padding: 5px 4px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
 table.dyn-table input, table.dyn-table select { width: 100%; padding: 5px 7px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; min-width: 70px; }
@@ -71,11 +71,34 @@ table.dyn-table .del-btn { color: #dc2626; background: none; border: none; curso
   .summary-key {
     width: 100%;
   }
-  table.dyn-table {
-    /* Ensures tables on small screens don't overflow the container without scrolling */
-    min-width: unset; 
-  }
   table.dyn-table th, table.dyn-table td {
     padding: 6px 4px;
+  }
+}
+
+/* Admin Sidebar Responsive */
+.admin-sidebar {
+  background-color: #FFFFFF;
+  border-right: 1px solid #E5E7EB;
+  transition: all 0.3s ease;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-sidebar.open {
+  width: 260px;
+}
+
+.admin-sidebar.closed {
+  width: 0px;
+}
+
+@media (max-width: 768px) {
+  .admin-sidebar.open {
+    position: absolute;
+    height: 100%;
+    z-index: 50;
+    box-shadow: 2px 0 8px rgba(0,0,0,0.1);
   }
 }

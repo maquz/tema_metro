@@ -746,17 +746,9 @@ export default function AdminDashboard() {
         </div>
       </header>
 
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
         {/* Left Sidebar */}
-        <aside style={{ 
-          width: sidebarOpen ? '260px' : '0px', 
-          backgroundColor: '#FFFFFF', 
-          borderRight: '1px solid #E5E7EB', 
-          transition: 'width 0.3s ease', 
-          overflowX: 'hidden',
-          display: 'flex',
-          flexDirection: 'column'
-        }}>
+        <aside className={`admin-sidebar ${sidebarOpen ? 'open' : 'closed'}`}>
           <div style={{ padding: '24px 16px', display: 'flex', flexDirection: 'column', gap: '8px', minWidth: '260px' }}>
             <div style={{ fontSize: '11px', fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px', paddingLeft: '16px' }}>Main Menu</div>
             <button
