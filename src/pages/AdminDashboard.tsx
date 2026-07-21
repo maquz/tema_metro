@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { db } from '../firebase';
-import { collection, onSnapshot, doc, updateDoc, deleteDoc, addDoc, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc, deleteDoc, addDoc, getDocs, setDoc } from 'firebase/firestore';
 import { auth } from '../firebase';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { useAuth } from '../context/AuthContext';
@@ -109,16 +109,42 @@ const createCombinedPDF = async (sub: any): Promise<Uint8Array | null> => {
 
 export default function AdminDashboard() {
   const { user, role, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState<'submissions' | 'users' | 'analytics' | 'schools' | 'bulk-download' | 'drafts'>('submissions');
+  const [activeTab, setActiveTab] = useState<'submissions' | 'users' | 'analytics' | 'schools' | 'bulk-download' | 'drafts' | 'duplicates'>('submissions');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   
   // Data States
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [cleaningDuplicates, setCleaningDuplicates] = useState(false);
-  const [showDuplicatesModal, setShowDuplicatesModal] = useState(false);
-  const [duplicateGroups, setDuplicateGroups] = useState<{ staffId: string, duplicates: any[], keep: any }[]>([]);
   const [deletedDuplicatesList, setDeletedDuplicatesList] = useState<any[]>([]);
+
+  const duplicateGroups = useMemo(() => {
+    const groups: Record<string, any[]> = {};
+    submissions.forEach(sub => {
+      if (!sub.staffId) return;
+      const normalizedId = String(sub.staffId).replace(/\s+/g, '').toUpperCase();
+      if (!groups[normalizedId]) {
+        groups[normalizedId] = [];
+      }
+      groups[normalizedId].push(sub);
+    });
+
+    const duplicates: { staffId: string, keep: any, duplicates: any[], all: any[] }[] = [];
+    
+    for (const staffId in groups) {
+      const docs = groups[staffId];
+      if (docs.length > 1) {
+        docs.sort((a, b) => {
+          const timeA = new Date(a.submittedAt).getTime();
+          const timeB = new Date(b.submittedAt).getTime();
+          return timeB - timeA; // Newest first
+        });
+        
+        duplicates.push({ staffId, keep: docs[0], duplicates: docs.slice(1), all: docs });
+      }
+    }
+    return duplicates;
+  }, [submissions]);
   
   // Filtering & Search States
   const [searchTerm, setSearchTerm] = useState('');
@@ -562,42 +588,6 @@ export default function AdminDashboard() {
   const [downloadRank, setDownloadRank] = useState('');
   const [downloadCategory, setDownloadCategory] = useState('');
 
-  const handleCleanDuplicates = () => {
-    const groups: Record<string, any[]> = {};
-    submissions.forEach(sub => {
-      if (!sub.staffId) return;
-      const normalizedId = sub.staffId.replace(/\s+/g, '').toUpperCase();
-      if (!groups[normalizedId]) {
-        groups[normalizedId] = [];
-      }
-      groups[normalizedId].push(sub);
-    });
-
-    const duplicates: { staffId: string, duplicates: any[], keep: any }[] = [];
-    
-    for (const staffId in groups) {
-      const docs = groups[staffId];
-      if (docs.length > 1) {
-        docs.sort((a, b) => {
-          const timeA = new Date(a.submittedAt).getTime();
-          const timeB = new Date(b.submittedAt).getTime();
-          return timeB - timeA; // Newest first
-        });
-        
-        duplicates.push({ staffId, keep: docs[0], duplicates: docs.slice(1) });
-      }
-    }
-
-    if (duplicates.length === 0) {
-      alert("No duplicates found.");
-      return;
-    }
-
-    setDuplicateGroups(duplicates);
-    setDeletedDuplicatesList([]);
-    setShowDuplicatesModal(true);
-  };
-
   const confirmDeleteDuplicates = async () => {
     if (!window.confirm(`Are you sure you want to delete all older duplicates? This action cannot be undone.`)) return;
     setCleaningDuplicates(true);
@@ -610,11 +600,59 @@ export default function AdminDashboard() {
         }
       }
       setDeletedDuplicatesList(deleted);
-      setDuplicateGroups([]);
       fetchSubmissions();
     } catch (error) {
       console.error('Error cleaning duplicates:', error);
       alert('Error cleaning duplicates.');
+    } finally {
+      setCleaningDuplicates(false);
+    }
+  };
+
+  const handleDeleteSpecificDuplicate = async (docId: string) => {
+    if (!window.confirm("Are you sure you want to delete this specific duplicate record? This cannot be undone.")) return;
+    try {
+      await deleteDoc(doc(db, 'submissions', docId));
+      fetchSubmissions();
+      alert("Record deleted successfully.");
+    } catch (err) {
+      console.error(err);
+      alert("Failed to delete record.");
+    }
+  };
+
+  const handleMergeIntoRecord = async (targetDoc: any, otherDocs: any[]) => {
+    if (!window.confirm("Are you sure you want to merge all other records in this group into this one? The other records will be permanently deleted.")) return;
+    try {
+      setCleaningDuplicates(true);
+      const mergedData = { ...targetDoc };
+      for (const older of otherDocs) {
+        ['academic', 'professional', 'promotions', 'children', 'employment'].forEach(arrField => {
+          if (older[arrField] && Array.isArray(older[arrField])) {
+            if (!mergedData[arrField]) mergedData[arrField] = [];
+            older[arrField].forEach((item: any) => {
+              const strItem = JSON.stringify(item);
+              const exists = mergedData[arrField].some((mItem: any) => JSON.stringify(mItem) === strItem);
+              if (!exists) mergedData[arrField].push(item);
+            });
+          }
+        });
+        Object.keys(older).forEach(key => {
+          if (key !== 'id' && key !== 'submittedAt' && !Array.isArray(older[key])) {
+            if (!mergedData[key] && older[key]) mergedData[key] = older[key];
+          }
+        });
+      }
+      const { id, ...dataToSave } = mergedData;
+      await setDoc(doc(db, 'submissions', targetDoc.id), dataToSave, { merge: true });
+      for (const older of otherDocs) {
+        await deleteDoc(doc(db, 'submissions', older.id));
+      }
+      fetchSubmissions();
+      alert("Records merged successfully.");
+    } catch (err) {
+      console.error("Error merging records:", err);
+      alert("Failed to merge records.");
     } finally {
       setCleaningDuplicates(false);
     }
@@ -787,6 +825,12 @@ export default function AdminDashboard() {
             >
               <FolderDown size={18} color={activeTab === 'bulk-download' ? '#002147' : '#9CA3AF'} /> Bulk Select & Download
             </button>
+            <button
+              onClick={() => { setActiveTab('duplicates'); setSidebarOpen(false); }}
+              style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 16px', borderRadius: '8px', border: 'none', backgroundColor: activeTab === 'duplicates' ? '#F3F4F6' : 'transparent', color: activeTab === 'duplicates' ? '#002147' : '#4B5563', fontWeight: activeTab === 'duplicates' ? '700' : '600', fontSize: '14px', cursor: 'pointer', transition: 'all 0.2s', textAlign: 'left', width: '100%' }}
+            >
+              <Activity size={18} color={activeTab === 'duplicates' ? '#002147' : '#9CA3AF'} /> Duplicate Records
+            </button>
           </div>
         </aside>
 
@@ -844,15 +888,6 @@ export default function AdminDashboard() {
                     ? `Part ${bulkZipProgress.batch}/${bulkZipProgress.totalBatches} (${bulkZipProgress.current}/${bulkZipProgress.total})...` 
                     : 'Download All (ZIP)'}
                 </button>
-                {role === 'admin' && (
-                  <button
-                    onClick={handleCleanDuplicates}
-                    disabled={cleaningDuplicates}
-                    style={{ padding: '11px 16px', borderRadius: '8px', border: '1.5px solid #D97706', backgroundColor: '#FEF3C7', color: '#B45309', fontSize: '13px', fontWeight: '700', cursor: cleaningDuplicates ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'all 0.2s', opacity: cleaningDuplicates ? 0.6 : 1 }}
-                  >
-                    <Activity size={14} /> {cleaningDuplicates ? 'Cleaning...' : 'Clean Duplicates'}
-                  </button>
-                )}
               </div>
 
               {/* Filter Bar */}
@@ -2309,6 +2344,100 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {/* Tab CONTENT 7: DUPLICATES */}
+      {activeTab === 'duplicates' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '800', color: '#002147', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Activity size={24} color="#D97706" /> Duplicate Records Management
+            </h2>
+            {duplicateGroups.length > 0 && (
+              <button
+                onClick={confirmDeleteDuplicates}
+                disabled={cleaningDuplicates}
+                style={{ padding: '10px 24px', borderRadius: '8px', border: 'none', backgroundColor: '#DC2626', color: '#FFF', fontSize: '13px', fontWeight: '700', cursor: cleaningDuplicates ? 'not-allowed' : 'pointer', opacity: cleaningDuplicates ? 0.7 : 1 }}
+              >
+                {cleaningDuplicates ? 'Processing...' : 'Delete All Older Duplicates Globally'}
+              </button>
+            )}
+          </div>
+
+          {duplicateGroups.length > 0 ? (
+            <div>
+              <p style={{ margin: '0 0 24px 0', fontSize: '14px', color: '#4B5563' }}>
+                Found <strong>{duplicateGroups.length}</strong> staff member(s) with multiple submissions. You can choose to merge or delete specific records.
+              </p>
+              {duplicateGroups.map((group: any) => (
+                <div key={group.staffId} style={{ marginBottom: '24px', border: '1px solid #E5E7EB', borderRadius: '12px', overflow: 'hidden', backgroundColor: '#FFFFFF', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                  <div style={{ backgroundColor: '#F9FAFB', padding: '16px 20px', borderBottom: '1px solid #E5E7EB', fontWeight: '800', color: '#111827', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                    <div>
+                      Staff ID: <span style={{ fontFamily: 'monospace', color: '#0369A1' }}>{group.staffId}</span> ({group.keep.teacherName})
+                    </div>
+                    <button
+                      onClick={() => handleMergeIntoRecord(group.keep, group.duplicates)}
+                      disabled={cleaningDuplicates}
+                      style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', backgroundColor: '#059669', color: '#FFF', fontSize: '12px', fontWeight: '700', cursor: cleaningDuplicates ? 'not-allowed' : 'pointer', opacity: cleaningDuplicates ? 0.7 : 1 }}
+                    >
+                      Merge All Into Newest Record
+                    </button>
+                  </div>
+                  
+                  <div style={{ padding: '20px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      {group.all.map((docObj: any, index: number) => {
+                        const isNewest = index === 0;
+                        return (
+                          <div key={docObj.id} style={{ padding: '16px', border: isNewest ? '2px solid #10B981' : '1px solid #E5E7EB', borderRadius: '8px', backgroundColor: isNewest ? '#ECFDF5' : '#FFF', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
+                            <div>
+                              <div style={{ marginBottom: '8px' }}>
+                                {isNewest ? (
+                                  <span style={{ fontSize: '11px', fontWeight: '800', color: '#065F46', backgroundColor: '#D1FAE5', padding: '4px 8px', borderRadius: '4px', textTransform: 'uppercase' }}>Newest Record (Base)</span>
+                                ) : (
+                                  <span style={{ fontSize: '11px', fontWeight: '800', color: '#991B1B', backgroundColor: '#FEE2E2', padding: '4px 8px', borderRadius: '4px', textTransform: 'uppercase' }}>Older Record</span>
+                                )}
+                              </div>
+                              <div style={{ fontSize: '14px', color: '#374151', lineHeight: '1.6' }}>
+                                <strong>Submitted:</strong> {formatTimestamp(docObj.submittedAt)} <br/>
+                                <strong>Category:</strong> {docObj.category} <br/>
+                                <strong>School:</strong> {docObj.school || 'N/A'} <br/>
+                                <strong>Docs Attached:</strong> {docObj.documents ? Object.keys(docObj.documents).length : 0}
+                              </div>
+                            </div>
+                            
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button
+                                onClick={() => handleDeleteSpecificDuplicate(docObj.id)}
+                                disabled={cleaningDuplicates || (group.all.length === 1)}
+                                style={{ padding: '8px 16px', borderRadius: '6px', border: '1.5px solid #FCA5A5', backgroundColor: '#FEF2F2', color: '#DC2626', fontSize: '12px', fontWeight: '600', cursor: (cleaningDuplicates || group.all.length === 1) ? 'not-allowed' : 'pointer' }}
+                              >
+                                Delete This
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : deletedDuplicatesList.length > 0 ? (
+            <div>
+              <div style={{ padding: '16px', backgroundColor: '#ECFDF5', border: '1px solid #10B981', borderRadius: '8px', marginBottom: '24px' }}>
+                <h4 style={{ margin: '0 0 8px 0', color: '#065F46', fontSize: '15px' }}>Cleanup Successful!</h4>
+                <p style={{ margin: 0, color: '#047857', fontSize: '14px' }}>Processed duplicate record(s).</p>
+              </div>
+            </div>
+          ) : (
+            <div style={{ backgroundColor: '#FFF', padding: '40px', borderRadius: '12px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+              <Activity size={48} color="#D1D5DB" style={{ marginBottom: '16px' }} />
+              <h3 style={{ margin: '0 0 8px', color: '#374151' }}>No Duplicates Found</h3>
+              <p style={{ margin: 0, color: '#6B7280', fontSize: '14px' }}>The database is clean! Every Staff ID appears only once.</p>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* DELETE CONFIRMATION MODAL */}
       {deleteSub && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001, padding: '20px' }}>
@@ -2329,85 +2458,6 @@ export default function AdminDashboard() {
               >
                 {deleting ? 'Deleting...' : 'Yes, Delete'}
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* DUPLICATES MANAGEMENT MODAL */}
-      {showDuplicatesModal && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
-          <div style={{ backgroundColor: '#FFF', borderRadius: '16px', maxWidth: '800px', width: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid #E5E7EB', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#002147', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Activity size={20} color="#D97706" /> Duplicate Records Management
-              </h3>
-              <button onClick={() => setShowDuplicatesModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280' }}>
-                <X size={24} />
-              </button>
-            </div>
-
-            <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
-              {duplicateGroups.length > 0 ? (
-                <div>
-                  <p style={{ margin: '0 0 16px 0', fontSize: '14px', color: '#4B5563' }}>
-                    Found <strong>{duplicateGroups.length}</strong> staff member(s) with multiple submissions. The newest submission will be kept, and the older ones will be deleted.
-                  </p>
-                  {duplicateGroups.map(group => (
-                    <div key={group.staffId} style={{ marginBottom: '24px', border: '1px solid #E5E7EB', borderRadius: '8px', overflow: 'hidden' }}>
-                      <div style={{ backgroundColor: '#F9FAFB', padding: '12px 16px', borderBottom: '1px solid #E5E7EB', fontWeight: '700', color: '#111827' }}>
-                        Staff ID: <span style={{ fontFamily: 'monospace', color: '#0369A1' }}>{group.staffId}</span> ({group.keep.teacherName})
-                      </div>
-                      <div style={{ padding: '16px' }}>
-                        <div style={{ marginBottom: '12px' }}>
-                          <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#059669', backgroundColor: '#D1FAE5', padding: '4px 8px', borderRadius: '4px', display: 'inline-block', marginBottom: '8px' }}>Keep (Newest)</span>
-                          <div style={{ fontSize: '13px', color: '#374151' }}>
-                            Submitted: {formatTimestamp(group.keep.submittedAt)} | Category: {group.keep.category} | School: {group.keep.school || 'N/A'}
-                          </div>
-                        </div>
-                        <div>
-                          <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#DC2626', backgroundColor: '#FEE2E2', padding: '4px 8px', borderRadius: '4px', display: 'inline-block', marginBottom: '8px' }}>To Delete (Older)</span>
-                          <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '13px', color: '#6B7280' }}>
-                            {group.duplicates.map((d: any) => (
-                              <li key={d.id}>Submitted: {formatTimestamp(d.submittedAt)} | Category: {d.category} | School: {d.school || 'N/A'}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : deletedDuplicatesList.length > 0 ? (
-                <div>
-                  <div style={{ padding: '16px', backgroundColor: '#ECFDF5', border: '1px solid #10B981', borderRadius: '8px', marginBottom: '24px' }}>
-                    <h4 style={{ margin: '0 0 8px 0', color: '#065F46', fontSize: '15px' }}>Cleanup Successful!</h4>
-                    <p style={{ margin: 0, color: '#047857', fontSize: '14px' }}>Deleted {deletedDuplicatesList.length} duplicate record(s).</p>
-                  </div>
-                  <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#374151' }}>List of Deleted Records:</h4>
-                  <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '13px', color: '#6B7280', maxHeight: '300px', overflowY: 'auto' }}>
-                    {deletedDuplicatesList.map((d: any, i: number) => (
-                      <li key={i} style={{ marginBottom: '6px' }}>
-                        <strong>{d.teacherName}</strong> (ID: {d.staffId}) - Submitted: {formatTimestamp(d.submittedAt)}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : (
-                <p style={{ color: '#6B7280', fontSize: '14px' }}>No duplicates to display.</p>
-              )}
-            </div>
-
-            <div style={{ padding: '16px 24px', borderTop: '1px solid #E5E7EB', display: 'flex', justifyContent: 'flex-end', gap: '12px', backgroundColor: '#F9FAFB', borderBottomLeftRadius: '16px', borderBottomRightRadius: '16px' }}>
-              <button onClick={() => setShowDuplicatesModal(false)} style={{ padding: '10px 20px', borderRadius: '8px', border: '1.5px solid #D1D5DB', backgroundColor: '#FFF', color: '#374151', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>Close</button>
-              {duplicateGroups.length > 0 && (
-                <button
-                  onClick={confirmDeleteDuplicates}
-                  disabled={cleaningDuplicates}
-                  style={{ padding: '10px 24px', borderRadius: '8px', border: 'none', backgroundColor: '#DC2626', color: '#FFF', fontSize: '13px', fontWeight: '700', cursor: cleaningDuplicates ? 'not-allowed' : 'pointer', opacity: cleaningDuplicates ? 0.7 : 1 }}
-                >
-                  {cleaningDuplicates ? 'Deleting...' : 'Delete All Older Duplicates'}
-                </button>
-              )}
             </div>
           </div>
         </div>
