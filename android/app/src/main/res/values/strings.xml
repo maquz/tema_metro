@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Tema Metro Education</string>
+    <string name="title_activity_main">Tema Metro Education</string>
+    <string name="package_name">com.temametro.app</string>
+    <string name="custom_url_scheme">com.temametro.app</string>
+</resources>

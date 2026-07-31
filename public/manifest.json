@@ -1,0 +1,21 @@
+{
+  "short_name": "Tema Metro",
+  "name": "Ghana Education Service - Tema Metro Directorate",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/logo.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#002147",
+  "theme_color": "#002147",
+  "display": "standalone",
+  "orientation": "portrait"
+}

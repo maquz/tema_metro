@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { db } from '../firebase';
-import { collection, onSnapshot, doc, updateDoc, deleteDoc, addDoc, getDocs, setDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc, deleteDoc, addDoc, setDoc } from 'firebase/firestore';
 import { auth } from '../firebase';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { useAuth } from '../context/AuthContext';
@@ -252,20 +252,6 @@ export default function AdminDashboard() {
     };
   }, []);
 
-  const fetchSubmissions = async () => {
-    try {
-      const querySnapshot = await getDocs(collection(db, 'submissions'));
-      const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      data.sort((a: any, b: any) => {
-        const timeA = a.submittedAt?.seconds || 0;
-        const timeB = b.submittedAt?.seconds || 0;
-        return timeB - timeA;
-      });
-      setSubmissions(data);
-    } catch (err) {
-      console.error('Error fetching submissions:', err);
-    }
-  };
 
   const formatTimestamp = (ts: any) => {
     if (!ts) return 'N/A';
@@ -429,8 +415,11 @@ export default function AdminDashboard() {
     const dataToUpdate = editForm;
     setEditSub(null); // Optimistic UI: close modal instantly
     
-    // Update runs in the background
-    updateDoc(doc(db, 'submissions', subToUpdate.id), dataToUpdate).catch(err => {
+    // Optimistically update local state
+    setSubmissions(prev => prev.map(s => s.id === subToUpdate.id ? { ...s, ...dataToUpdate } : s));
+
+    // Upsert runs in the background (setDoc with merge avoids "No document to update" errors)
+    setDoc(doc(db, 'submissions', subToUpdate.id), dataToUpdate, { merge: true }).catch(err => {
       console.error('Error updating submission:', err);
       alert(`Failed to save changes: ${(err as any).message || 'Please try again.'}`);
     });
@@ -441,8 +430,10 @@ export default function AdminDashboard() {
     const subToDelete = deleteSub;
     setDeleteSub(null); // Optimistic UI: close modal instantly
     
-    // Deletion runs in the background. With localCache enabled,
-    // onSnapshot will instantly update the UI.
+    // Optimistically remove from state instantly
+    setSubmissions(prev => prev.filter(s => s.id !== subToDelete.id));
+
+    // Deletion runs in the background.
     deleteDoc(doc(db, 'submissions', subToDelete.id)).catch(err => {
       console.error('Error deleting submission:', err);
       alert('Failed to delete record. Please try again.');
@@ -592,15 +583,17 @@ export default function AdminDashboard() {
     if (!window.confirm(`Are you sure you want to delete all older duplicates? This action cannot be undone.`)) return;
     setCleaningDuplicates(true);
     try {
+      const deletedIds = new Set<string>();
       const deleted: any[] = [];
       for (const group of duplicateGroups) {
         for (const docObj of group.duplicates) {
           await deleteDoc(doc(db, 'submissions', docObj.id));
           deleted.push(docObj);
+          deletedIds.add(docObj.id);
         }
       }
+      setSubmissions(prev => prev.filter(s => !deletedIds.has(s.id)));
       setDeletedDuplicatesList(deleted);
-      fetchSubmissions();
     } catch (error) {
       console.error('Error cleaning duplicates:', error);
       alert('Error cleaning duplicates.');
@@ -613,7 +606,7 @@ export default function AdminDashboard() {
     if (!window.confirm("Are you sure you want to delete this specific duplicate record? This cannot be undone.")) return;
     try {
       await deleteDoc(doc(db, 'submissions', docId));
-      fetchSubmissions();
+      setSubmissions(prev => prev.filter(s => s.id !== docId));
       alert("Record deleted successfully.");
     } catch (err) {
       console.error(err);
@@ -645,11 +638,23 @@ export default function AdminDashboard() {
       }
       const { id, ...dataToSave } = mergedData;
       await setDoc(doc(db, 'submissions', targetDoc.id), dataToSave, { merge: true });
+      
+      const olderIds = new Set<string>();
       for (const older of otherDocs) {
         await deleteDoc(doc(db, 'submissions', older.id));
+        olderIds.add(older.id);
       }
-      fetchSubmissions();
-      alert("Records merged successfully.");
+      
+      setSubmissions(prev => {
+        let next = prev.filter(sub => !olderIds.has(sub.id));
+        const targetIndex = next.findIndex(sub => sub.id === targetDoc.id);
+        if (targetIndex !== -1) {
+          next[targetIndex] = { ...next[targetIndex], ...dataToSave };
+        }
+        return next;
+      });
+
+      alert("Records successfully merged and older versions deleted.");
     } catch (err) {
       console.error("Error merging records:", err);
       alert("Failed to merge records.");

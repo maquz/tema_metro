@@ -22,7 +22,7 @@ export default function Signup() {
     setError('');
     
     const staffIdTrimmed = staffId.trim();
-    if (!/^\d+$/.test(staffIdTrimmed)) {
+    if (staffIdTrimmed && !/^\d+$/.test(staffIdTrimmed)) {
       setError('Staff ID must contain only numbers.');
       return;
     }
@@ -156,9 +156,9 @@ export default function Signup() {
               <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'rgba(255,255,255,0.5)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Staff ID</label>
               <div style={{ position: 'relative' }}>
                 <User size={16} color="rgba(255,255,255,0.3)" style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
-                <input type="text" value={staffId} onChange={e => setStaffId(e.target.value)} required
+                <input type="text" value={staffId} onChange={e => setStaffId(e.target.value)}
                   style={{ width: '100%', padding: '13px 14px 13px 42px', borderRadius: '10px', border: '1.5px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.05)', fontSize: '14px', color: '#FFFFFF', outline: 'none', boxSizing: 'border-box' }}
-                  placeholder="Enter your Staff ID" />
+                  placeholder="Enter your Staff ID (Optional)" />
               </div>
             </div>
 

@@ -1,0 +1,8 @@
+{
+  "appId": "com.temametro.app",
+  "appName": "Tema Metro Education",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}

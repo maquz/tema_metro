@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { CheckCircle, User, FileText, Upload, X, LogOut, ShieldAlert } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 
-import { collection, addDoc, updateDoc, getDocs, doc, serverTimestamp, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, getDocs, doc, serverTimestamp, onSnapshot, query, where, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import ImageCropperModal from '../components/ImageCropperModal';
@@ -800,13 +800,37 @@ export default function TeacherForm() {
 
   useEffect(() => {
     if (!user) return;
-    const q = query(collection(db, 'submissions'), where('submittedBy', '==', user.uid));
-    const unsub = onSnapshot(q, (snapshot) => {
+    
+    const qByUid = query(collection(db, 'submissions'), where('submittedBy', '==', user.uid));
+    const unsubUid = onSnapshot(qByUid, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setMySubmissions(data);
+      setMySubmissions(prev => {
+        const others = prev.filter(p => p.submittedBy !== user.uid);
+        const map = new Map();
+        [...others, ...data].forEach(item => map.set(item.id, item));
+        return Array.from(map.values());
+      });
     });
-    return () => unsub();
-  }, [user]);
+
+    let unsubStaffId = () => {};
+    if (authStaffId) {
+      const qByStaffId = query(collection(db, 'submissions'), where('staffId', '==', authStaffId));
+      unsubStaffId = onSnapshot(qByStaffId, (snapshot) => {
+        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setMySubmissions(prev => {
+          const others = prev.filter(p => p.staffId !== authStaffId);
+          const map = new Map();
+          [...others, ...data].forEach(item => map.set(item.id, item));
+          return Array.from(map.values());
+        });
+      });
+    }
+
+    return () => {
+      unsubUid();
+      unsubStaffId();
+    };
+  }, [user, authStaffId]);
 
   const dynamicCircuits = Array.from(new Set(schoolsData.map(s => s.circuit))).sort();
   const getSchoolsForCircuit = (circuit: string) => schoolsData.filter(s => s.circuit === circuit).map(s => s.school).sort();
@@ -816,50 +840,167 @@ export default function TeacherForm() {
   useEffect(() => {
   }, [currentRole]);
 
-  // Auto-Save Effect (Every 10 seconds)
+  const handleEditSubmission = (sub: any) => {
+    setForm(prev => {
+      const base = {
+        ...initForm(),
+        ...sub,
+        category: sub.category || '',
+        circuit: sub.circuit || '',
+        school: sub.school || '',
+        subject: sub.subject || '',
+        certificationDate: sub.certificationDate || '',
+        firstName: sub.firstName || sub.teacherName?.split(' ')[0] || '',
+        surname: sub.surname || sub.teacherName?.split(' ').slice(1).join(' ') || '',
+        sex: sub.sex || '',
+      };
+      // Keep any non-empty fields from current form state if sub field is empty
+      Object.keys(prev).forEach(key => {
+        const k = key as keyof FormState;
+        if (typeof prev[k] === 'string' && (prev[k] as string).trim() !== '' && (!base[k] || (typeof base[k] === 'string' && (base[k] as string).trim() === ''))) {
+          (base as any)[k] = prev[k];
+        }
+      });
+      return base;
+    });
+    setEditSubmissionId(sub.id);
+    
+    const newFiles = DOCUMENTS.map(docName => {
+      const existingDocs = sub.documents?.filter((d: any) => d.documentType === docName) || [];
+      return existingDocs.map((d: any) => ({
+        isExisting: true,
+        downloadURL: d.downloadURL,
+        fileName: d.fileName,
+        documentType: d.documentType,
+      }));
+    });
+    setFiles(newFiles);
+    
+    setSection(0);
+    window.scrollTo(0, 0);
+  };
+
+  const autoLoadedRef = useRef(false);
+
+  useEffect(() => {
+    if (editSubmissionId || autoLoadedRef.current || mySubmissions.length === 0) return;
+
+    // Prioritize active draft first, or the most recent submission
+    const draft = mySubmissions.find(s => s.status === 'draft');
+    const sorted = [...mySubmissions].sort((a, b) => {
+      const aTime = a.updatedAt?.toMillis?.() || a.submittedAt?.toMillis?.() || a.createdAt?.toMillis?.() || 0;
+      const bTime = b.updatedAt?.toMillis?.() || b.submittedAt?.toMillis?.() || b.createdAt?.toMillis?.() || 0;
+      return bTime - aTime;
+    });
+    const targetSub = draft || sorted[0];
+
+    if (targetSub) {
+      autoLoadedRef.current = true;
+      handleEditSubmission(targetSub);
+    }
+  }, [mySubmissions, editSubmissionId]);
+
+  // Auto-Save Effect (Every 3 seconds)
   useEffect(() => {
     if (currentRole !== 'teacher' && currentRole !== 'metro_officer') return;
     
     const interval = setInterval(async () => {
-      if (!form.staffId || form.staffId.trim() === '') return;
       if (submitting) return;
 
+      const hasSomeData = Boolean(
+        form.staffId?.trim() ||
+        form.firstName?.trim() ||
+        form.surname?.trim() ||
+        form.category?.trim() ||
+        form.school?.trim() ||
+        form.circuit?.trim() ||
+        form.photoUrl
+      );
+
+      if (!hasSomeData && !editSubmissionId) return;
+
       try {
+        const normalizedInputId = form.staffId?.replace(/\s+/g, '')?.toUpperCase();
+
         if (editSubmissionId) {
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { photoUrl, ...formWithoutPhoto } = form;
-          await updateDoc(doc(db, 'submissions', editSubmissionId), {
+          await setDoc(doc(db, 'submissions', editSubmissionId), {
             ...formWithoutPhoto,
-            status: form.status || 'submitted',
+            status: form.status || 'draft',
             updatedAt: serverTimestamp(),
-          });
+            submittedBy: user?.uid ?? '',
+            submittedByEmail: user?.email ?? '',
+          }, { merge: true });
+
+          if (user?.uid && normalizedInputId && normalizedInputId !== authStaffId) {
+            try {
+              await setDoc(doc(db, 'users', user.uid), { staffId: normalizedInputId }, { merge: true });
+            } catch (e) {}
+          }
         } else {
-          const q = query(collection(db, 'submissions'), where('submittedBy', '==', user?.uid ?? ''));
-          const snap = await getDocs(q);
-          const normalizedInputId = form.staffId.replace(/\s+/g, '').toUpperCase();
-          const existingDoc = snap.docs.find(d => {
-            const docStaffId = d.data().staffId?.replace(/\s+/g, '').toUpperCase();
-            return docStaffId === normalizedInputId;
-          });
+          let existingDoc;
+
+          if (normalizedInputId) {
+            const q = query(collection(db, 'submissions'), where('staffId', '==', normalizedInputId));
+            const snap = await getDocs(q);
+            existingDoc = snap.docs.sort((a, b) => {
+              const aTime = a.data().updatedAt?.toMillis?.() || a.data().submittedAt?.toMillis?.() || a.data().createdAt?.toMillis?.() || 0;
+              const bTime = b.data().updatedAt?.toMillis?.() || b.data().submittedAt?.toMillis?.() || b.data().createdAt?.toMillis?.() || 0;
+              return bTime - aTime;
+            })[0];
+          }
+
+          if (!existingDoc && user?.uid) {
+            const q2 = query(collection(db, 'submissions'), where('submittedBy', '==', user.uid));
+            const snap2 = await getDocs(q2);
+            existingDoc = snap2.docs.sort((a, b) => {
+              const aTime = a.data().updatedAt?.toMillis?.() || a.data().submittedAt?.toMillis?.() || a.data().createdAt?.toMillis?.() || 0;
+              const bTime = b.data().updatedAt?.toMillis?.() || b.data().submittedAt?.toMillis?.() || b.data().createdAt?.toMillis?.() || 0;
+              return bTime - aTime;
+            })[0];
+          }
+
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { photoUrl, ...formWithoutPhoto } = form;
+
           if (existingDoc) {
             const existingId = existingDoc.id;
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            const { photoUrl, ...formWithoutPhoto } = form;
-            await updateDoc(doc(db, 'submissions', existingId), {
-              ...formWithoutPhoto,
-              status: form.status || 'submitted',
-              updatedAt: serverTimestamp(),
+            const existingData = existingDoc.data();
+
+            // First load existing doc into form state so screen populates instantly
+            handleEditSubmission({ id: existingId, ...existingData });
+
+            // Build merged payload: keep existing doc values, only update with non-empty form inputs
+            const mergedPayload: any = { ...existingData };
+            Object.keys(formWithoutPhoto).forEach(k => {
+              const val = (formWithoutPhoto as any)[k];
+              if (Array.isArray(val)) {
+                if (val.length > 0 && val.some(item => Object.values(item).some(v => String(v).trim() !== ''))) {
+                  mergedPayload[k] = val;
+                }
+              } else if (val !== undefined && val !== null && String(val).trim() !== '') {
+                mergedPayload[k] = val;
+              }
             });
+
+            await setDoc(doc(db, 'submissions', existingId), {
+              ...mergedPayload,
+              status: existingData.status || form.status || 'draft',
+              updatedAt: serverTimestamp(),
+              submittedBy: user?.uid ?? existingData.submittedBy ?? '',
+              submittedByEmail: user?.email ?? existingData.submittedByEmail ?? '',
+            }, { merge: true });
+
             setEditSubmissionId(existingId);
           } else {
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            const { photoUrl, ...formWithoutPhoto } = form;
             const docRef = await addDoc(collection(db, 'submissions'), {
               ...formWithoutPhoto,
               status: 'draft',
               submittedBy: user?.uid ?? '',
               submittedByEmail: user?.email ?? '',
               createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
             });
             setEditSubmissionId(docRef.id);
             setForm(f => ({ ...f, status: 'draft' }));
@@ -871,7 +1012,7 @@ export default function TeacherForm() {
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [form, editSubmissionId, currentRole, submitting, user]);
+  }, [form, editSubmissionId, currentRole, submitting, user, authStaffId]);
 
   const validatePersonal = () => {
     const e: Partial<FormState> = {};
@@ -915,36 +1056,6 @@ export default function TeacherForm() {
   const setFileGroup = (i: number) => (fs: UploadFile[]) => setFiles(prev => prev.map((v, idx) => idx === i ? fs : v));
   const requiredUploadedCount = files.slice(0, 4).filter(group => group.length > 0).length;
   const allUploaded = requiredUploadedCount === 4;
-
-  const handleEditSubmission = (sub: any) => {
-    setForm({
-      ...initForm(),
-      ...sub,
-      category: sub.category || '',
-      circuit: sub.circuit || '',
-      school: sub.school || '',
-      subject: sub.subject || '',
-      certificationDate: sub.certificationDate || '',
-      firstName: sub.firstName || sub.teacherName?.split(' ')[0] || '',
-      surname: sub.surname || sub.teacherName?.split(' ').slice(1).join(' ') || '',
-      sex: sub.sex || '',
-    });
-    setEditSubmissionId(sub.id);
-    
-    const newFiles = DOCUMENTS.map(docName => {
-      const existingDocs = sub.documents?.filter((d: any) => d.documentType === docName) || [];
-      return existingDocs.map((d: any) => ({
-        isExisting: true,
-        downloadURL: d.downloadURL,
-        fileName: d.fileName,
-        documentType: d.documentType,
-      }));
-    });
-    setFiles(newFiles);
-    
-    setSection(0);
-    window.scrollTo(0, 0);
-  };
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -1078,20 +1189,38 @@ export default function TeacherForm() {
           updatedAt: serverTimestamp(),
         });
       } else {
-        // Check if a record with this staffId already exists within user's own submissions
-        const q = query(collection(db, 'submissions'), where('submittedBy', '==', user?.uid ?? ''));
-        const snap = await getDocs(q);
-        const normalizedInputId = form.staffId.replace(/\s+/g, '').toUpperCase();
-        const existingDoc = snap.docs.find(d => {
-          const docStaffId = d.data().staffId?.replace(/\s+/g, '').toUpperCase();
-          return docStaffId === normalizedInputId;
-        });
+        // Check if a record with this staffId already exists
+        const normalizedInputId = form.staffId?.replace(/\s+/g, '')?.toUpperCase();
+        let existingDoc;
+
+        if (normalizedInputId) {
+          const q = query(collection(db, 'submissions'), where('staffId', '==', normalizedInputId));
+          const snap = await getDocs(q);
+          existingDoc = snap.docs.sort((a, b) => {
+            const aTime = a.data().submittedAt?.toMillis?.() || a.data().createdAt?.toMillis?.() || 0;
+            const bTime = b.data().submittedAt?.toMillis?.() || b.data().createdAt?.toMillis?.() || 0;
+            return bTime - aTime;
+          })[0];
+        }
+
+        if (!existingDoc && user?.uid) {
+          const q2 = query(collection(db, 'submissions'), where('submittedBy', '==', user.uid));
+          const snap2 = await getDocs(q2);
+          existingDoc = snap2.docs.sort((a, b) => {
+            const aTime = a.data().submittedAt?.toMillis?.() || a.data().createdAt?.toMillis?.() || 0;
+            const bTime = b.data().submittedAt?.toMillis?.() || b.data().createdAt?.toMillis?.() || 0;
+            return bTime - aTime;
+          })[0];
+        }
+
         if (existingDoc) {
           const existingId = existingDoc.id;
           await updateDoc(doc(db, 'submissions', existingId), {
             ...firestorePayload,
             status: 'submitted',
             updatedAt: serverTimestamp(),
+            submittedBy: user?.uid ?? '',
+            submittedByEmail: user?.email ?? '',
           });
           setEditSubmissionId(existingId);
         } else {
@@ -1103,6 +1232,14 @@ export default function TeacherForm() {
             submittedAt: serverTimestamp(),
           });
           setEditSubmissionId(docRef.id);
+        }
+
+        if (user && normalizedInputId && normalizedInputId !== authStaffId) {
+          try {
+            await setDoc(doc(db, 'users', user.uid), { staffId: normalizedInputId }, { merge: true });
+          } catch (e) {
+            console.error('Failed to update User staffId:', e);
+          }
         }
       }
 
