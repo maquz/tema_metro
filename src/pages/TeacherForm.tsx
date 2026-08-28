@@ -853,6 +853,12 @@ export default function TeacherForm() {
         firstName: sub.firstName || sub.teacherName?.split(' ')[0] || '',
         surname: sub.surname || sub.teacherName?.split(' ').slice(1).join(' ') || '',
         sex: sub.sex || '',
+        academic: (Array.isArray(sub.academic) && sub.academic.length > 0) ? sub.academic : initForm().academic,
+        professional: (Array.isArray(sub.professional) && sub.professional.length > 0) ? sub.professional : initForm().professional,
+        promotions: (Array.isArray(sub.promotions) && sub.promotions.length > 0) ? sub.promotions : initForm().promotions,
+        employment: (Array.isArray(sub.employment) && sub.employment.length > 0) ? sub.employment : initForm().employment,
+        children: (Array.isArray(sub.children) && sub.children.length > 0) ? sub.children : initForm().children,
+        nameChanges: (Array.isArray(sub.nameChanges) && sub.nameChanges.length > 0) ? sub.nameChanges : initForm().nameChanges,
       };
       // Keep any non-empty fields from current form state if sub field is empty
       Object.keys(prev).forEach(key => {
@@ -865,16 +871,25 @@ export default function TeacherForm() {
     });
     setEditSubmissionId(sub.id);
     
-    const newFiles = DOCUMENTS.map(docName => {
-      const existingDocs = sub.documents?.filter((d: any) => d.documentType === docName) || [];
-      return existingDocs.map((d: any) => ({
-        isExisting: true,
-        downloadURL: d.downloadURL,
-        fileName: d.fileName,
-        documentType: d.documentType,
-      }));
-    });
-    setFiles(newFiles);
+    // Robustly map existing documents without dropping unmatched documentTypes
+    const docMap: UploadFile[][] = DOCUMENTS.map(() => []);
+    if (Array.isArray(sub.documents)) {
+      sub.documents.forEach((d: any) => {
+        const docObj: ExistingFile = {
+          isExisting: true,
+          downloadURL: d.downloadURL,
+          fileName: d.fileName,
+          documentType: d.documentType,
+        };
+        const idx = DOCUMENTS.findIndex(docName => docName === d.documentType);
+        if (idx >= 0 && idx < 4) {
+          docMap[idx].push(docObj);
+        } else {
+          docMap[4].push(docObj);
+        }
+      });
+    }
+    setFiles(docMap);
     
     setSection(0);
     window.scrollTo(0, 0);
@@ -922,16 +937,31 @@ export default function TeacherForm() {
       try {
         const normalizedInputId = form.staffId?.replace(/\s+/g, '')?.toUpperCase();
 
+        // Extract existing document references from files state to preserve in Firestore
+        const existingDocRefs = files.flatMap((group, index) =>
+          group.filter((f): f is ExistingFile => 'isExisting' in f).map(f => ({
+            documentType: f.documentType || DOCUMENTS[index],
+            downloadURL: f.downloadURL,
+            fileName: f.fileName,
+          }))
+        );
+
         if (editSubmissionId) {
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { photoUrl, ...formWithoutPhoto } = form;
-          await setDoc(doc(db, 'submissions', editSubmissionId), {
+          const payload: any = {
             ...formWithoutPhoto,
             status: form.status || 'draft',
             updatedAt: serverTimestamp(),
             submittedBy: user?.uid ?? '',
             submittedByEmail: user?.email ?? '',
-          }, { merge: true });
+          };
+
+          if (existingDocRefs.length > 0) {
+            payload.documents = existingDocRefs;
+          }
+
+          await setDoc(doc(db, 'submissions', editSubmissionId), payload, { merge: true });
 
           if (user?.uid && normalizedInputId && normalizedInputId !== authStaffId) {
             try {
@@ -968,10 +998,10 @@ export default function TeacherForm() {
             const existingId = existingDoc.id;
             const existingData = existingDoc.data();
 
-            // First load existing doc into form state so screen populates instantly
-            handleEditSubmission({ id: existingId, ...existingData });
+            // Set edit submission ID so subsequent auto-saves target this doc
+            setEditSubmissionId(existingId);
 
-            // Build merged payload: keep existing doc values, only update with non-empty form inputs
+            // Build merged payload: keep existing doc values, update with non-empty form inputs
             const mergedPayload: any = { ...existingData };
             Object.keys(formWithoutPhoto).forEach(k => {
               const val = (formWithoutPhoto as any)[k];
@@ -984,6 +1014,10 @@ export default function TeacherForm() {
               }
             });
 
+            if (existingDocRefs.length > 0) {
+              mergedPayload.documents = existingDocRefs;
+            }
+
             await setDoc(doc(db, 'submissions', existingId), {
               ...mergedPayload,
               status: existingData.status || form.status || 'draft',
@@ -991,17 +1025,19 @@ export default function TeacherForm() {
               submittedBy: user?.uid ?? existingData.submittedBy ?? '',
               submittedByEmail: user?.email ?? existingData.submittedByEmail ?? '',
             }, { merge: true });
-
-            setEditSubmissionId(existingId);
           } else {
-            const docRef = await addDoc(collection(db, 'submissions'), {
+            const payload: any = {
               ...formWithoutPhoto,
               status: 'draft',
               submittedBy: user?.uid ?? '',
               submittedByEmail: user?.email ?? '',
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
-            });
+            };
+            if (existingDocRefs.length > 0) {
+              payload.documents = existingDocRefs;
+            }
+            const docRef = await addDoc(collection(db, 'submissions'), payload);
             setEditSubmissionId(docRef.id);
             setForm(f => ({ ...f, status: 'draft' }));
           }
@@ -1012,7 +1048,7 @@ export default function TeacherForm() {
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [form, editSubmissionId, currentRole, submitting, user, authStaffId]);
+  }, [form, files, editSubmissionId, currentRole, submitting, user, authStaffId]);
 
   const validatePersonal = () => {
     const e: Partial<FormState> = {};
