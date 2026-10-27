@@ -6,6 +6,7 @@ import Login from './pages/Login';
 import Signup from './pages/Signup';
 import TeacherForm from './pages/TeacherForm';
 import AdminDashboard from './pages/AdminDashboard';
+import EdmsPage from './pages/EdmsPage';
 
 // Route protection for authenticated users
 function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode; allowedRoles?: string[] }) {
@@ -110,6 +111,14 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['admin', 'editor']}>
                 <AdminDashboard />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/edms" 
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'editor', 'metro_officer']}>
+                <EdmsPage />
               </ProtectedRoute>
             } 
           />

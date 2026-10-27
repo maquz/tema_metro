@@ -13,6 +13,7 @@ import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { PDFDocument } from 'pdf-lib';
 import Footer from '../components/Footer';
+import EdmsModule from '../components/EdmsModule';
 import { 
   LogOut, Users, FileText, Activity, Search, Download, 
   ChevronRight, ExternalLink, BarChart3, TrendingUp, GraduationCap, Building2, ShieldCheck,
@@ -109,7 +110,7 @@ const createCombinedPDF = async (sub: any): Promise<Uint8Array | null> => {
 
 export default function AdminDashboard() {
   const { user, role, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState<'submissions' | 'users' | 'analytics' | 'schools' | 'bulk-download' | 'drafts' | 'duplicates'>('submissions');
+  const [activeTab, setActiveTab] = useState<'submissions' | 'users' | 'analytics' | 'schools' | 'bulk-download' | 'drafts' | 'duplicates' | 'edms'>('submissions');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   
   // Data States
@@ -835,6 +836,12 @@ export default function AdminDashboard() {
               style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 16px', borderRadius: '8px', border: 'none', backgroundColor: activeTab === 'duplicates' ? '#F3F4F6' : 'transparent', color: activeTab === 'duplicates' ? '#002147' : '#4B5563', fontWeight: activeTab === 'duplicates' ? '700' : '600', fontSize: '14px', cursor: 'pointer', transition: 'all 0.2s', textAlign: 'left', width: '100%' }}
             >
               <Activity size={18} color={activeTab === 'duplicates' ? '#002147' : '#9CA3AF'} /> Duplicate Records
+            </button>
+            <button
+              onClick={() => { setActiveTab('edms'); setSidebarOpen(false); }}
+              style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 16px', borderRadius: '8px', border: 'none', backgroundColor: activeTab === 'edms' ? '#14503a' : 'transparent', color: activeTab === 'edms' ? '#FFFFFF' : '#14503a', fontWeight: '700', fontSize: '14px', cursor: 'pointer', transition: 'all 0.2s', textAlign: 'left', width: '100%', marginTop: '4px' }}
+            >
+              <GraduationCap size={18} color={activeTab === 'edms' ? '#FFFFFF' : '#14503a'} /> EDMS Census System
             </button>
           </div>
         </aside>
@@ -2113,6 +2120,17 @@ export default function AdminDashboard() {
             </div>
           );
         })()}
+
+        {/* Tab CONTENT: EDMS CENSUS & PLANNING MODULE */}
+        {activeTab === 'edms' && (
+          <div style={{ margin: '-32px', borderRadius: '8px', overflow: 'hidden' }}>
+            <EdmsModule
+              schoolsData={schoolsData}
+              submissions={submissions}
+              onBackToAdmin={() => setActiveTab('submissions')}
+            />
+          </div>
+        )}
         </main>
       </div>
 
