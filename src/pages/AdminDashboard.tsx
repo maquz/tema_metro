@@ -14,6 +14,13 @@ import jsPDF from 'jspdf';
 import { PDFDocument } from 'pdf-lib';
 import Footer from '../components/Footer';
 import EdmsModule from '../components/EdmsModule';
+import {
+  checkCpanelHealth,
+  syncBulkToCpanel,
+  mirrorExternalFilesToCpanel,
+  generateFullMysqlDump,
+  type CpanelHealthResponse,
+} from '../cpanelApi';
 import { 
   LogOut, Users, FileText, Activity, Search, Download, 
   ChevronRight, ExternalLink, BarChart3, TrendingUp, GraduationCap, Building2, ShieldCheck,
@@ -110,7 +117,7 @@ const createCombinedPDF = async (sub: any): Promise<Uint8Array | null> => {
 
 export default function AdminDashboard() {
   const { user, role, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState<'submissions' | 'users' | 'analytics' | 'schools' | 'bulk-download' | 'drafts' | 'duplicates' | 'edms'>('submissions');
+  const [activeTab, setActiveTab] = useState<'submissions' | 'users' | 'analytics' | 'schools' | 'bulk-download' | 'drafts' | 'duplicates' | 'edms' | 'cpanel-migration'>('submissions');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   
   // Data States
@@ -118,6 +125,9 @@ export default function AdminDashboard() {
   const [users, setUsers] = useState<any[]>([]);
   const [cleaningDuplicates, setCleaningDuplicates] = useState(false);
   const [deletedDuplicatesList, setDeletedDuplicatesList] = useState<any[]>([]);
+  const [cpanelHealth, setCpanelHealth] = useState<CpanelHealthResponse | null>(null);
+  const [cpanelSyncing, setCpanelSyncing] = useState(false);
+  const [cpanelSyncLog, setCpanelSyncLog] = useState<string>('');
 
   const duplicateGroups = useMemo(() => {
     const groups: Record<string, any[]> = {};
@@ -842,6 +852,16 @@ export default function AdminDashboard() {
               style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 16px', borderRadius: '8px', border: 'none', backgroundColor: activeTab === 'edms' ? '#14503a' : 'transparent', color: activeTab === 'edms' ? '#FFFFFF' : '#14503a', fontWeight: '700', fontSize: '14px', cursor: 'pointer', transition: 'all 0.2s', textAlign: 'left', width: '100%', marginTop: '4px' }}
             >
               <GraduationCap size={18} color={activeTab === 'edms' ? '#FFFFFF' : '#14503a'} /> EDMS Census System
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('cpanel-migration');
+                setSidebarOpen(false);
+                checkCpanelHealth().then(setCpanelHealth);
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 16px', borderRadius: '8px', border: 'none', backgroundColor: activeTab === 'cpanel-migration' ? '#0369A1' : 'transparent', color: activeTab === 'cpanel-migration' ? '#FFFFFF' : '#0369A1', fontWeight: '700', fontSize: '14px', cursor: 'pointer', transition: 'all 0.2s', textAlign: 'left', width: '100%', marginTop: '4px' }}
+            >
+              <Share2 size={18} color={activeTab === 'cpanel-migration' ? '#FFFFFF' : '#0369A1'} /> cPanel & SQL Migration
             </button>
           </div>
         </aside>
@@ -2129,6 +2149,245 @@ export default function AdminDashboard() {
               submissions={submissions}
               onBackToAdmin={() => setActiveTab('submissions')}
             />
+          </div>
+        )}
+
+        {/* Tab CONTENT: CPANEL & MYSQL MIGRATION CENTER */}
+        {activeTab === 'cpanel-migration' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px', marginBottom: '20px' }}>
+                <div>
+                  <h2 style={{ margin: '0 0 6px', fontSize: '20px', fontWeight: '800', color: '#002147' }}>
+                    cPanel Subdomain & MySQL Migration Center (temametro.codecasticgh.com)
+                  </h2>
+                  <p style={{ margin: 0, fontSize: '13.5px', color: '#4B5563' }}>
+                    Export your complete live database (`users`, `submissions`, `schools`) as a ready-to-import <b>.sql</b> file for cPanel <b>phpMyAdmin</b>, or sync directly to `/api/index.php` and `/uploads/` on your cPanel server.
+                  </p>
+                </div>
+                <button
+                  onClick={() => checkCpanelHealth().then(setCpanelHealth)}
+                  style={{
+                    padding: '9px 16px',
+                    borderRadius: '8px',
+                    border: '1.5px solid #0369A1',
+                    backgroundColor: '#F0F9FF',
+                    color: '#0369A1',
+                    fontSize: '13px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Check cPanel PHP/MySQL Connection
+                </button>
+              </div>
+
+              {/* Live Counts Summary */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '22px' }}>
+                <div style={{ padding: '16px', borderRadius: '12px', backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                  <div style={{ fontSize: '12px', color: '#64748B', fontWeight: '600' }}>Live Portal Users</div>
+                  <div style={{ fontSize: '24px', fontWeight: '800', color: '#002147', marginTop: '4px' }}>{users.length}</div>
+                  <div style={{ fontSize: '11.5px', color: '#047857', marginTop: '2px' }}>Ready for `users` SQL table</div>
+                </div>
+                <div style={{ padding: '16px', borderRadius: '12px', backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                  <div style={{ fontSize: '12px', color: '#64748B', fontWeight: '600' }}>Teacher Submissions</div>
+                  <div style={{ fontSize: '24px', fontWeight: '800', color: '#002147', marginTop: '4px' }}>{submissions.length}</div>
+                  <div style={{ fontSize: '11.5px', color: '#047857', marginTop: '2px' }}>Ready for `submissions` SQL table</div>
+                </div>
+                <div style={{ padding: '16px', borderRadius: '12px', backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                  <div style={{ fontSize: '12px', color: '#64748B', fontWeight: '600' }}>EDMS Census Schools</div>
+                  <div style={{ fontSize: '24px', fontWeight: '800', color: '#002147', marginTop: '4px' }}>{schoolsData.length}</div>
+                  <div style={{ fontSize: '11.5px', color: '#047857', marginTop: '2px' }}>Ready for `schools` SQL table</div>
+                </div>
+                <div style={{ padding: '16px', borderRadius: '12px', backgroundColor: cpanelHealth?.ok ? '#ECFDF5' : '#FEF3C7', border: `1px solid ${cpanelHealth?.ok ? '#A7F3D0' : '#FDE68A'}` }}>
+                  <div style={{ fontSize: '12px', color: cpanelHealth?.ok ? '#065F46' : '#92400E', fontWeight: '700' }}>
+                    cPanel `/api/index.php` Status
+                  </div>
+                  <div style={{ fontSize: '15px', fontWeight: '800', color: cpanelHealth?.ok ? '#047857' : '#B45309', marginTop: '6px' }}>
+                    {cpanelHealth?.ok ? `Connected (${cpanelHealth.database})` : 'Export Mode Ready'}
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#4B5563', marginTop: '4px' }}>
+                    {cpanelHealth?.ok && cpanelHealth.counts
+                      ? `MySQL: ${cpanelHealth.counts.users} users · ${cpanelHealth.counts.submissions} subs · ${cpanelHealth.counts.schools} schools`
+                      : 'Download the .sql dump below to import into cPanel phpMyAdmin'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+                <button
+                  onClick={() => {
+                    const sqlDump = generateFullMysqlDump({
+                      users,
+                      submissions,
+                      schools: schoolsData,
+                    });
+                    const blob = new Blob([sqlDump], { type: 'application/sql;charset=utf-8' });
+                    const dateStr = new Date().toISOString().slice(0, 10);
+                    saveAs(blob, `tema_metro_cpanel_database_${dateStr}.sql`);
+                    setCpanelSyncLog(
+                      `Downloaded tema_metro_cpanel_database_${dateStr}.sql (${users.length} users, ${submissions.length} submissions, ${schoolsData.length} schools). Import this file in cPanel -> phpMyAdmin!`
+                    );
+                  }}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '12px 20px',
+                    borderRadius: '10px',
+                    border: 'none',
+                    backgroundColor: '#002147',
+                    color: '#FFFFFF',
+                    fontSize: '13.5px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Download size={16} /> 1. Download Complete MySQL Dump (.sql) for phpMyAdmin
+                </button>
+
+                <button
+                  onClick={() => {
+                    const payload = {
+                      exportedAt: new Date().toISOString(),
+                      subdomain: 'https://temametro.codecasticgh.com',
+                      users,
+                      submissions,
+                      schools: schoolsData,
+                    };
+                    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+                      type: 'application/json;charset=utf-8',
+                    });
+                    const dateStr = new Date().toISOString().slice(0, 10);
+                    saveAs(blob, `tema_metro_full_backup_${dateStr}.json`);
+                    setCpanelSyncLog(`Downloaded full JSON backup (${users.length} users, ${submissions.length} submissions, ${schoolsData.length} schools).`);
+                  }}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '12px 20px',
+                    borderRadius: '10px',
+                    border: '1.5px solid #002147',
+                    backgroundColor: '#FFFFFF',
+                    color: '#002147',
+                    fontSize: '13.5px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Download size={16} /> 2. Download Full Raw JSON Backup (.json)
+                </button>
+
+                <button
+                  disabled={cpanelSyncing}
+                  onClick={async () => {
+                    setCpanelSyncing(true);
+                    setCpanelSyncLog('Pushing all Users, Submissions, and EDMS Schools to cPanel MySQL (/api/index.php)...');
+                    try {
+                      const r1 = await syncBulkToCpanel('users', users, (d, t) =>
+                        setCpanelSyncLog(`Syncing users to cPanel MySQL: ${d}/${t}...`)
+                      );
+                      if (!r1.ok) throw new Error(r1.error);
+
+                      const r2 = await syncBulkToCpanel('submissions', submissions, (d, t) =>
+                        setCpanelSyncLog(`Syncing teacher submissions to cPanel MySQL: ${d}/${t}...`)
+                      );
+                      if (!r2.ok) throw new Error(r2.error);
+
+                      const r3 = await syncBulkToCpanel('schools', schoolsData, (d, t) =>
+                        setCpanelSyncLog(`Syncing EDMS schools to cPanel MySQL: ${d}/${t}...`)
+                      );
+                      if (!r3.ok) throw new Error(r3.error);
+
+                      const h = await checkCpanelHealth();
+                      setCpanelHealth(h);
+                      setCpanelSyncLog(
+                        `Successfully synced ${r1.syncedCount} users, ${r2.syncedCount} submissions, and ${r3.syncedCount} schools directly into cPanel MySQL!`
+                      );
+                    } catch (err: any) {
+                      setCpanelSyncLog(`Sync Notice: ${err?.message || 'Could not reach /api/index.php'}`);
+                    } finally {
+                      setCpanelSyncing(false);
+                    }
+                  }}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '12px 20px',
+                    borderRadius: '10px',
+                    border: 'none',
+                    backgroundColor: '#047857',
+                    color: '#FFFFFF',
+                    fontSize: '13.5px',
+                    fontWeight: '700',
+                    cursor: cpanelSyncing ? 'not-allowed' : 'pointer',
+                    opacity: cpanelSyncing ? 0.6 : 1,
+                  }}
+                >
+                  <Share2 size={16} /> 3. Live Sync All Data to cPanel MySQL (/api/)
+                </button>
+
+                <button
+                  disabled={cpanelSyncing}
+                  onClick={async () => {
+                    setCpanelSyncing(true);
+                    setCpanelSyncLog('Mirroring external PDFs & Passport Photos into cPanel /uploads/ directory...');
+                    try {
+                      const { mirroredFiles, updatedSubmissions } = await mirrorExternalFilesToCpanel(
+                        submissions,
+                        msg => setCpanelSyncLog(msg)
+                      );
+                      if (updatedSubmissions.length > 0) {
+                        await syncBulkToCpanel('submissions', updatedSubmissions);
+                      }
+                      setCpanelSyncLog(
+                        `Mirrored ${mirroredFiles} files directly into /uploads/ on your cPanel server (${updatedSubmissions.length} submission records updated)!`
+                      );
+                    } catch (err: any) {
+                      setCpanelSyncLog(`File Mirror Notice: ${err?.message || 'Error mirroring files'}`);
+                    } finally {
+                      setCpanelSyncing(false);
+                    }
+                  }}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '12px 20px',
+                    borderRadius: '10px',
+                    border: 'none',
+                    backgroundColor: '#0369A1',
+                    color: '#FFFFFF',
+                    fontSize: '13.5px',
+                    fontWeight: '700',
+                    cursor: cpanelSyncing ? 'not-allowed' : 'pointer',
+                    opacity: cpanelSyncing ? 0.6 : 1,
+                  }}
+                >
+                  <FolderDown size={16} /> 4. Mirror Uploaded PDFs & Photos to cPanel `/uploads/`
+                </button>
+              </div>
+
+              {cpanelSyncLog && (
+                <div
+                  style={{
+                    marginTop: '16px',
+                    padding: '12px 16px',
+                    borderRadius: '10px',
+                    backgroundColor: '#F0F9FF',
+                    border: '1px solid #BAE6FD',
+                    color: '#0369A1',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                  }}
+                >
+                  {cpanelSyncLog}
+                </div>
+              )}
+            </div>
           </div>
         )}
         </main>

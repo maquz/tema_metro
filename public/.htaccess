@@ -1,0 +1,15 @@
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Allow direct access to the cPanel PHP API and uploaded documents/photos
+  RewriteRule ^api/ - [L]
+  RewriteRule ^uploads/ - [L]
+  RewriteRule ^index\.html$ - [L]
+
+  # Route all frontend SPA paths to index.html
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteCond %{REQUEST_FILENAME} !-l
+  RewriteRule . /index.html [L]
+</IfModule>

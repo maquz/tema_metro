@@ -7,6 +7,7 @@ import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import ImageCropperModal from '../components/ImageCropperModal';
 import Footer from '../components/Footer';
+import { uploadFileSmart, syncDocToCpanel } from '../cpanelApi';
 
 // ── Types ──────────────────────────────────────────────────
 interface AcadRow { level: string; subjects: string; year: string; [key: string]: string; }
@@ -1105,12 +1106,9 @@ export default function TeacherForm() {
         return str.trim().replace(/[^a-zA-Z0-9-]/g, '_').replace(/_+/g, '_');
       };
 
-      // Cloudinary config — hoisted so both the doc loop and photo upload can use it
+      // Upload config (uses cPanel /api/upload.php -> /uploads/ when on cPanel, with Cloudinary fallback)
       const cloudName = (import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || '').trim();
       const uploadPreset = (import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || '').trim();
-      if (!cloudName || !uploadPreset || cloudName === 'your_cloudinary_cloud_name') {
-        throw new Error('MISSING_CLOUDINARY_CONFIG');
-      }
 
       setSubmittingText(`Uploading ${flatFiles.length} documents...`);
 
@@ -1142,88 +1140,80 @@ export default function TeacherForm() {
         const newFilename = `${prefix}_${sanitizedTeacher}_${safeDocType}.${ext}`;
         const renamedFile = new File([fileToUpload], newFilename, { type: fileToUpload.type });
 
-        const formData = new FormData();
-        formData.append('file', renamedFile, newFilename);
-        formData.append('upload_preset', uploadPreset);
-        
         const folderPath = form.category === 'Education Office' 
           ? `ges-tema/Education Office/${form.teacherName}`
           : `ges-tema/${form.circuit}/${form.school}/${form.teacherName}`;
-        formData.append('folder', folderPath);
 
         const resourceType = renamedFile.type.startsWith('image/') ? 'image' : 'raw';
-        const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`, {
-          method: 'POST',
-          body: formData,
+        const secureUrl = await uploadFileSmart({
+          file: renamedFile,
+          fileName: newFilename,
+          folderPath,
+          cloudName,
+          uploadPreset,
+          resourceType,
         });
 
-        if (!response.ok) {
-          const errText = await response.text();
-          throw new Error(`Cloudinary upload failed for ${newFilename}. Reason: ${errText}`);
-        }
-
-        const data = await response.json();
         return {
           documentType,
-          downloadURL: data.secure_url,
+          downloadURL: secureUrl,
           fileName: newFilename,
         };
       });
 
       const uploadedFiles = await Promise.all(uploadPromises);
 
-      // Upload passport photo to Cloudinary if it's a base64 string (not already a URL)
+      // Upload passport photo to cPanel /uploads/ (or Cloudinary fallback) if it's a base64 string
       let passportPhotoUrl = '';
       if (form.photoUrl && form.photoUrl.startsWith('data:')) {
         try {
           setSubmittingText('Uploading passport photo...');
-          // Convert base64 data URL to blob using fetch natively (much faster than atob loop)
           const res = await fetch(form.photoUrl);
           const photoBlob = await res.blob();
-          const photoFile = new File([photoBlob], `${sanitizeForFilename(form.staffId || 'NO_ID')}_${sanitizeForFilename(form.teacherName || form.firstName)}_Passport.jpg`, { type: 'image/jpeg' });
-
-          const photoFormData = new FormData();
-          photoFormData.append('file', photoFile);
-          photoFormData.append('upload_preset', uploadPreset);
+          const photoFileName = `${sanitizeForFilename(form.staffId || 'NO_ID')}_${sanitizeForFilename(form.teacherName || form.firstName)}_Passport.jpg`;
+          const photoFile = new File([photoBlob], photoFileName, { type: 'image/jpeg' });
           const folderPath = form.category === 'Education Office'
             ? `ges-tema/Education Office/${form.teacherName}/passport`
             : `ges-tema/${form.circuit}/${form.school}/${form.teacherName}/passport`;
-          photoFormData.append('folder', folderPath);
 
-          const photoRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
-            method: 'POST',
-            body: photoFormData,
+          passportPhotoUrl = await uploadFileSmart({
+            file: photoFile,
+            fileName: photoFileName,
+            folderPath,
+            cloudName,
+            uploadPreset,
+            resourceType: 'image',
           });
-          if (photoRes.ok) {
-            const photoData = await photoRes.json();
-            passportPhotoUrl = photoData.secure_url;
-          }
         } catch (photoErr) {
           console.warn('Passport photo upload failed, continuing without it:', photoErr);
         }
       } else if (form.photoUrl && form.photoUrl.startsWith('http')) {
-        // Already a Cloudinary URL from a previous submission
         passportPhotoUrl = form.photoUrl;
       }
 
       setSubmittingText('Saving to database...');
 
-      // Strip base64 photoUrl — never write large base64 strings to Firestore
+      // Strip base64 photoUrl — never write large base64 strings to database
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { photoUrl: _base64Photo, ...formWithoutPhoto } = form;
       const firestorePayload = {
         ...formWithoutPhoto,
-        photoUrl: passportPhotoUrl, // store only the Cloudinary URL (empty string if upload failed)
+        photoUrl: passportPhotoUrl,
         documents: uploadedFiles,
       };
 
-      // Save to Firestore using staffId as lookup key
+      // Save to Firestore and cPanel MySQL using staffId as lookup key
       if (editSubmissionId) {
         await updateDoc(doc(db, 'submissions', editSubmissionId), {
           ...firestorePayload,
           status: 'submitted',
           updatedAt: serverTimestamp(),
         });
+        syncDocToCpanel('submissions', {
+          ...firestorePayload,
+          id: editSubmissionId,
+          status: 'submitted',
+        }).catch(() => {});
       } else {
         // Check if a record with this staffId already exists
         const normalizedInputId = form.staffId?.replace(/\s+/g, '')?.toUpperCase();
@@ -1258,6 +1248,13 @@ export default function TeacherForm() {
             submittedBy: user?.uid ?? '',
             submittedByEmail: user?.email ?? '',
           });
+          syncDocToCpanel('submissions', {
+            ...firestorePayload,
+            id: existingId,
+            status: 'submitted',
+            submittedBy: user?.uid ?? '',
+            submittedByEmail: user?.email ?? '',
+          }).catch(() => {});
           setEditSubmissionId(existingId);
         } else {
           const docRef = await addDoc(collection(db, 'submissions'), {
@@ -1267,12 +1264,20 @@ export default function TeacherForm() {
             submittedByEmail: user?.email ?? '',
             submittedAt: serverTimestamp(),
           });
+          syncDocToCpanel('submissions', {
+            ...firestorePayload,
+            id: docRef.id,
+            status: 'submitted',
+            submittedBy: user?.uid ?? '',
+            submittedByEmail: user?.email ?? '',
+          }).catch(() => {});
           setEditSubmissionId(docRef.id);
         }
 
         if (user && normalizedInputId && normalizedInputId !== authStaffId) {
           try {
             await setDoc(doc(db, 'users', user.uid), { staffId: normalizedInputId }, { merge: true });
+            syncDocToCpanel('users', { id: user.uid, email: user.email, staffId: normalizedInputId }).catch(() => {});
           } catch (e) {
             console.error('Failed to update User staffId:', e);
           }
