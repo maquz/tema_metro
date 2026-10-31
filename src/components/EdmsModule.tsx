@@ -20,6 +20,12 @@ import {
   Plus,
   CheckCircle2,
   Edit3,
+  LayoutGrid,
+  Table as TableIcon,
+  BarChart3,
+  Search,
+  X,
+  ChevronRight,
 } from 'lucide-react';
 
 const FAC: [string, string][] = [
@@ -570,39 +576,1608 @@ function Dist({ title, rows, isDark }: { title: string; rows: [string, number][]
   );
 }
 
-function Kpis({ items, isDark }: { items: [string, string][]; isDark?: boolean }) {
+interface KpisProps {
+  items: [string, string][];
+  isDark?: boolean;
+  schools?: any[];
+  validSubmissions?: any[];
+  target?: number;
+  onInspectSchool?: (school: any) => void;
+}
+
+function Kpis({
+  items,
+  isDark = true,
+  schools = [],
+  validSubmissions = [],
+  target = 35,
+  onInspectSchool,
+}: KpisProps) {
+  const [selectedKey, setSelectedKey] = useState<string>('');
+  const [viewMode, setViewMode] = useState<'cards' | 'table' | 'chart'>('cards');
+  const [teacherSubMode, setTeacherSubMode] = useState<'schools' | 'portal'>('schools');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [circuitFilter, setCircuitFilter] = useState('All');
+  const [hoveredKey, setHoveredKey] = useState<string>('');
+
+  const activePair = items.find(([k]) => k === selectedKey);
+  const allCircuits = useMemo(
+    () => Array.from(new Set(schools.map(s => s.circuit).filter(Boolean))).sort(),
+    [schools]
+  );
+
+  // Filter schools by search query and circuit
+  const filteredSchools = useMemo(() => {
+    const qLower = searchQuery.trim().toLowerCase();
+    return schools.filter(s => {
+      if (circuitFilter !== 'All' && s.circuit !== circuitFilter) return false;
+      if (!qLower) return true;
+      return (
+        (s.name || '').toLowerCase().includes(qLower) ||
+        (s.emis || '').toLowerCase().includes(qLower) ||
+        (s.circuit || '').toLowerCase().includes(qLower) ||
+        (s.head || '').toLowerCase().includes(qLower) ||
+        (s.type || '').toLowerCase().includes(qLower)
+      );
+    });
+  }, [schools, searchQuery, circuitFilter]);
+
+  // Filter portal teacher submissions by search query and circuit
+  const filteredSubmissions = useMemo(() => {
+    const qLower = searchQuery.trim().toLowerCase();
+    return validSubmissions.filter((sub: any) => {
+      const cir = sub.circuit || '';
+      if (circuitFilter !== 'All' && cir !== circuitFilter) return false;
+      if (!qLower) return true;
+      const fullName = (sub.teacherName || `${sub.firstName || ''} ${sub.surname || ''}`).toLowerCase();
+      return (
+        fullName.includes(qLower) ||
+        (sub.staffId || '').toLowerCase().includes(qLower) ||
+        (sub.school || '').toLowerCase().includes(qLower) ||
+        (sub.currentRank || '').toLowerCase().includes(qLower) ||
+        (sub.subject || '').toLowerCase().includes(qLower)
+      );
+    });
+  }, [validSubmissions, searchQuery, circuitFilter]);
+
+  // Build comprehensive breakdown data for whichever KPI card is clicked
+  const drilldown = useMemo(() => {
+    if (!activePair) return null;
+    const [key, val] = activePair;
+    const kLower = key.toLowerCase();
+
+    const totBoys = sum(filteredSchools.map(s => s.enr[0] + s.enr[2] + s.enr[4]));
+    const totGirls = sum(filteredSchools.map(s => s.enr[1] + s.enr[3] + s.enr[5]));
+    const totPupils = totBoys + totGirls;
+    const totTch = sum(filteredSchools.map(teachers));
+    const totTrn = sum(filteredSchools.map(s => sum(s.trn || [])));
+    const totRooms = sum(filteredSchools.map(s => s.rooms || 0));
+
+    // 1. SCHOOLS KPI
+    if (kLower === 'schools') {
+      const pubCount = filteredSchools.filter(s => (s.type || '').toUpperCase().includes('PUBLIC')).length;
+      const privCount = filteredSchools.length - pubCount;
+      const withPortal = filteredSchools.filter(s => (s.portalTeachers?.length || 0) > 0).length;
+
+      return {
+        title: 'Registered Schools Breakdown',
+        subtitle: 'Complete directory of schools across circuits with enrolment, staffing, and facility scores',
+        hasPortalToggle: false,
+        summaryPills: [
+          ['Matching Schools', String(filteredSchools.length)],
+          ['Public Schools', String(pubCount)],
+          ['Private / Mission', String(privCount)],
+          ['Circuits Covered', String(new Set(filteredSchools.map(s => s.circuit)).size)],
+          ['With Portal Staff', String(withPortal)],
+        ] as [string, string][],
+        tableCols: [
+          'EMIS Code',
+          'School Name',
+          'Circuit',
+          'Ownership',
+          'Levels',
+          'Head Teacher',
+          'Phone',
+          'Pupils',
+          'Teachers',
+          'Portal Staff',
+          'Classrooms',
+          'Facility Score',
+        ],
+        tableRows: filteredSchools.map(s => [
+          s.emis || '-',
+          s.name,
+          s.circuit,
+          s.type || 'PUBLIC',
+          s.levels || '-',
+          s.head || '-',
+          s.phone || '-',
+          pupils(s),
+          teachers(s),
+          s.portalTeachers?.length || 0,
+          s.rooms || 0,
+          s.fac ? `${score(s)}/8` : 'n/a',
+        ]),
+        cards: filteredSchools.map(s => ({
+          id: s.id || s.emis + s.name,
+          school: s,
+          title: s.name,
+          badge: s.type || 'PUBLIC',
+          badgeColor: (s.type || '').includes('PUBLIC') ? '#059669' : '#d97706',
+          meta: `${s.emis || 'No EMIS'} · ${s.circuit} · ${s.levels || 'Basic'}`,
+          stats: [
+            ['Total Pupils', pupils(s).toLocaleString()],
+            ['Teachers (Portal)', `${teachers(s)} (${s.portalTeachers?.length || 0})`],
+            ['Classrooms', String(s.rooms || 0)],
+            ['Facilities', s.fac ? `${score(s)}/8` : 'n/a'],
+          ] as [string, string][],
+          footer: `Head: ${s.head || 'Not specified'} ${s.phone ? '· ' + s.phone : ''}`,
+          progress: s.fac ? (score(s) / 8) * 100 : 0,
+        })),
+        charts: [
+          {
+            title: 'Schools by Circuit',
+            items: allCircuits.map(c => {
+              const cnt = filteredSchools.filter(s => s.circuit === c).length;
+              return [c, pct(cnt, filteredSchools.length || 1), `${cnt} schools`] as [string, number, string];
+            }),
+          },
+          {
+            title: 'Schools by Ownership Type',
+            items: Array.from(new Set(filteredSchools.map(s => s.type || 'PUBLIC'))).map(t => {
+              const cnt = filteredSchools.filter(s => (s.type || 'PUBLIC') === t).length;
+              return [t, pct(cnt, filteredSchools.length || 1), `${cnt} (${pct(cnt, filteredSchools.length || 1)}%)`] as [
+                string,
+                number,
+                string
+              ];
+            }),
+          },
+        ],
+      };
+    }
+
+    // 2. PUPILS / BOYS / GIRLS KPI
+    if (kLower === 'pupils' || kLower === 'boys' || kLower === 'girls') {
+      const kgTot = sum(filteredSchools.map(s => s.enr[0] + s.enr[1]));
+      const priTot = sum(filteredSchools.map(s => s.enr[2] + s.enr[3]));
+      const jhsTot = sum(filteredSchools.map(s => s.enr[4] + s.enr[5]));
+      const sorted = [...filteredSchools].sort((a, b) => pupils(b) - pupils(a));
+      const maxP = sorted.length ? Math.max(1, pupils(sorted[0])) : 1;
+
+      return {
+        title: `${key} Enrolment Breakdown`,
+        subtitle: 'School-by-school and class-level pupil enrolment across KG, Primary, and JHS',
+        hasPortalToggle: false,
+        summaryPills: [
+          ['Total Pupils', totPupils.toLocaleString()],
+          ['Total Boys', totBoys.toLocaleString()],
+          ['Total Girls', totGirls.toLocaleString()],
+          ['KG Enrolment', kgTot.toLocaleString()],
+          ['Primary Enrolment', priTot.toLocaleString()],
+          ['JHS Enrolment', jhsTot.toLocaleString()],
+        ] as [string, string][],
+        tableCols: [
+          'School Name',
+          'Circuit',
+          'KG Boys',
+          'KG Girls',
+          'Pri Boys',
+          'Pri Girls',
+          'JHS Boys',
+          'JHS Girls',
+          'Total Boys',
+          'Total Girls',
+          'Total Pupils',
+        ],
+        tableRows: sorted.map(s => {
+          const b = s.enr[0] + s.enr[2] + s.enr[4];
+          const g = s.enr[1] + s.enr[3] + s.enr[5];
+          return [
+            s.name,
+            s.circuit,
+            s.enr[0],
+            s.enr[1],
+            s.enr[2],
+            s.enr[3],
+            s.enr[4],
+            s.enr[5],
+            b,
+            g,
+            b + g,
+          ];
+        }),
+        cards: sorted.map(s => {
+          const b = s.enr[0] + s.enr[2] + s.enr[4];
+          const g = s.enr[1] + s.enr[3] + s.enr[5];
+          const tot = b + g;
+          return {
+            id: s.id || s.emis + s.name,
+            school: s,
+            title: s.name,
+            badge: `${tot.toLocaleString()} pupils`,
+            badgeColor: '#0284c7',
+            meta: `${s.circuit} · ${s.type || 'PUBLIC'}`,
+            stats: [
+              ['Boys / Girls', `${b.toLocaleString()} B / ${g.toLocaleString()} G`],
+              ['KG Total', String(s.enr[0] + s.enr[1])],
+              ['Primary Total', String(s.enr[2] + s.enr[3])],
+              ['JHS Total', String(s.enr[4] + s.enr[5])],
+            ] as [string, string][],
+            footer: `GPI: ${b ? (g / b).toFixed(2) : '-'} · Classrooms: ${s.rooms || 0}`,
+            progress: pct(tot, maxP),
+          };
+        }),
+        charts: [
+          {
+            title: 'Pupil Enrolment by Circuit',
+            items: allCircuits.map(c => {
+              const p = sum(filteredSchools.filter(s => s.circuit === c).map(pupils));
+              return [c, pct(p, totPupils || 1), p.toLocaleString() + ' pupils'] as [string, number, string];
+            }),
+          },
+          {
+            title: 'Enrolment by Level (KG / Primary / JHS)',
+            items: [
+              ['KG (KG1 - KG2)', pct(kgTot, totPupils || 1), `${kgTot.toLocaleString()} (${pct(kgTot, totPupils || 1)}%)`],
+              [
+                'Primary (P1 - P6)',
+                pct(priTot, totPupils || 1),
+                `${priTot.toLocaleString()} (${pct(priTot, totPupils || 1)}%)`,
+              ],
+              ['JHS (JHS1 - JHS3)', pct(jhsTot, totPupils || 1), `${jhsTot.toLocaleString()} (${pct(jhsTot, totPupils || 1)}%)`],
+            ] as [string, number, string][],
+          },
+        ],
+      };
+    }
+
+    // 3. TEACHERS / MALE-FEMALE / STAFFING KPI
+    if (
+      kLower.includes('teacher') && !kLower.includes('ratio') && !kLower.includes('trained') ||
+      kLower === 'male / female'
+    ) {
+      const totM = sum(filteredSchools.map(s => tqo(s).M));
+      const totF = sum(filteredSchools.map(s => tqo(s).F));
+      const sorted = [...filteredSchools].sort((a, b) => teachers(b) - teachers(a));
+      const maxT = sorted.length ? Math.max(1, teachers(sorted[0])) : 1;
+
+      const isPortalMode = teacherSubMode === 'portal';
+
+      return {
+        title: isPortalMode
+          ? `Individual Portal Teacher Submissions (${filteredSubmissions.length})`
+          : `Teaching Staff Breakdown by School (${filteredSchools.length} Schools)`,
+        subtitle:
+          'Switch between School-by-School Staffing Totals and Individual Submitted Teacher Profiles from the Portal',
+        hasPortalToggle: true,
+        summaryPills: [
+          ['Total Teachers', totTch.toLocaleString()],
+          ['Portal Submissions', filteredSubmissions.length.toLocaleString()],
+          ['Male Teachers', totM.toLocaleString()],
+          ['Female Teachers', totF.toLocaleString()],
+          ['Trained Teachers', `${totTrn.toLocaleString()} (${pct(totTrn, totTch || 1)}%)`],
+        ] as [string, string][],
+        tableCols: isPortalMode
+          ? [
+              'Staff ID',
+              'Full Name',
+              'Sex',
+              'School',
+              'Circuit',
+              'Current Rank',
+              'Qualification',
+              'Subject / Area',
+              'Phone',
+            ]
+          : [
+              'School Name',
+              'Circuit',
+              'KG Tch',
+              'Primary Tch',
+              'JHS Tch',
+              'Total Teachers',
+              'Portal Submissions',
+              'Male',
+              'Female',
+              'Trained',
+            ],
+        tableRows: isPortalMode
+          ? filteredSubmissions.map((sub: any) => [
+              sub.staffId || '-',
+              sub.teacherName || `${sub.firstName || ''} ${sub.surname || ''}`.trim() || '-',
+              sub.sex || '-',
+              sub.school || '-',
+              sub.circuit || '-',
+              sub.currentRank || '-',
+              Array.isArray(sub.professional) && sub.professional[0]
+                ? sub.professional[0].course || sub.professional[0].award || 'Certified'
+                : sub.teachersLicence
+                ? 'Licensed'
+                : '-',
+              sub.subject || sub.areaOfSpecialization || '-',
+              sub.telephone || sub.phone || '-',
+            ])
+          : sorted.map(s => [
+              s.name,
+              s.circuit,
+              s.tch?.[0] || 0,
+              s.tch?.[1] || 0,
+              s.tch?.[2] || 0,
+              teachers(s),
+              s.portalTeachers?.length || 0,
+              tqo(s).M,
+              tqo(s).F,
+              sum(s.trn || []),
+            ]),
+        cards: isPortalMode
+          ? filteredSubmissions.slice(0, 180).map((sub: any, idx: number) => {
+              const name = sub.teacherName || `${sub.firstName || ''} ${sub.surname || ''}`.trim() || 'Teacher';
+              return {
+                id: sub.id || `${sub.staffId}-${idx}`,
+                school: filteredSchools.find(s => norm(s.name) === norm(sub.school)),
+                title: name,
+                badge: sub.staffId ? `ID: ${sub.staffId}` : 'Portal Staff',
+                badgeColor: '#059669',
+                meta: `${sub.school || 'Unassigned'} · ${sub.circuit || '-'}`,
+                stats: [
+                  ['Sex / DOB', `${sub.sex || '-'} · ${sub.dob || '-'}`],
+                  ['Current Rank', sub.currentRank || '-'],
+                  ['Subject', sub.subject || sub.areaOfSpecialization || '-'],
+                  ['Reg / Licence', sub.regNumber || sub.teachersLicence || '-'],
+                ] as [string, string][],
+                footer: `Phone: ${sub.telephone || sub.phone || '-'} · Email: ${sub.email || '-'}`,
+                progress: 100,
+              };
+            })
+          : sorted.map(s => {
+              const tc = teachers(s);
+              const pCount = s.portalTeachers?.length || 0;
+              return {
+                id: s.id || s.emis + s.name,
+                school: s,
+                title: s.name,
+                badge: `${tc} teachers`,
+                badgeColor: '#059669',
+                meta: `${s.circuit} · ${pCount} portal submission${pCount === 1 ? '' : 's'}`,
+                stats: [
+                  ['Male / Female', `${tqo(s).M} M / ${tqo(s).F} F`],
+                  ['Trained Staff', `${sum(s.trn || [])} (${pct(sum(s.trn || []), tc || 1)}%)`],
+                  ['KG / Pri / JHS', `${s.tch?.[0] || 0} / ${s.tch?.[1] || 0} / ${s.tch?.[2] || 0}`],
+                  ['Aged 55+', String((tqo(s).age?.[4] || 0) + (tqo(s).age?.[5] || 0))],
+                ] as [string, string][],
+                footer:
+                  pCount > 0
+                    ? `Portal staff: ${s.portalTeachers
+                        .slice(0, 3)
+                        .map((t: any) => t.teacherName || `${t.firstName || ''} ${t.surname || ''}`.trim())
+                        .join(', ')}${pCount > 3 ? ` +${pCount - 3} more` : ''}`
+                    : `Head: ${s.head || '-'}`,
+                progress: pct(tc, maxT),
+              };
+            }),
+        charts: [
+          {
+            title: 'Teachers by Circuit',
+            items: allCircuits.map(c => {
+              const tc = sum(filteredSchools.filter(s => s.circuit === c).map(teachers));
+              return [c, pct(tc, totTch || 1), `${tc} teachers`] as [string, number, string];
+            }),
+          },
+          {
+            title: 'Gender Distribution across Selected Schools',
+            items: [
+              ['Female Teachers', pct(totF, totM + totF || 1), `${totF} (${pct(totF, totM + totF || 1)}%)`],
+              ['Male Teachers', pct(totM, totM + totF || 1), `${totM} (${pct(totM, totM + totF || 1)}%)`],
+            ] as [string, number, string][],
+          },
+        ],
+      };
+    }
+
+    // 4. GENDER PARITY INDEX (GPI)
+    if (kLower.includes('gender parity') || kLower.includes('gpi')) {
+      const paritySchools = filteredSchools.filter(s => {
+        const b = s.enr[0] + s.enr[2] + s.enr[4];
+        const g = s.enr[1] + s.enr[3] + s.enr[5];
+        if (!b) return false;
+        const ratio = g / b;
+        return ratio >= 0.95 && ratio <= 1.05;
+      }).length;
+      const highFemale = filteredSchools.filter(s => {
+        const b = s.enr[0] + s.enr[2] + s.enr[4];
+        const g = s.enr[1] + s.enr[3] + s.enr[5];
+        return b > 0 && g / b > 1.05;
+      }).length;
+      const highMale = filteredSchools.filter(s => {
+        const b = s.enr[0] + s.enr[2] + s.enr[4];
+        const g = s.enr[1] + s.enr[3] + s.enr[5];
+        return b > 0 && g / b < 0.95;
+      }).length;
+
+      return {
+        title: 'Gender Parity Index (GPI) Analysis',
+        subtitle: 'Ratio of female-to-male pupil enrolment across schools and classes (1.00 = exact gender balance)',
+        hasPortalToggle: false,
+        summaryPills: [
+          ['Overall GPI', totBoys ? (totGirls / totBoys).toFixed(2) : '-'],
+          ['Balanced (0.95 - 1.05)', `${paritySchools} schools`],
+          ['Higher Female (> 1.05)', `${highFemale} schools`],
+          ['Higher Male (< 0.95)', `${highMale} schools`],
+          ['Girls Share', `${pct(totGirls, totPupils || 1)}%`],
+        ] as [string, string][],
+        tableCols: ['School Name', 'Circuit', 'Boys', 'Girls', 'Total Pupils', 'Female %', 'GPI (Girls/Boys)', 'Status'],
+        tableRows: filteredSchools.map(s => {
+          const b = s.enr[0] + s.enr[2] + s.enr[4];
+          const g = s.enr[1] + s.enr[3] + s.enr[5];
+          const ratio = b ? g / b : 0;
+          const status = !b
+            ? 'No Enrolment'
+            : ratio >= 0.95 && ratio <= 1.05
+            ? 'Balanced Parity'
+            : ratio > 1.05
+            ? 'Higher Female'
+            : 'Higher Male';
+          return [s.name, s.circuit, b, g, b + g, `${pct(g, b + g || 1)}%`, b ? ratio.toFixed(2) : '-', status];
+        }),
+        cards: filteredSchools.map(s => {
+          const b = s.enr[0] + s.enr[2] + s.enr[4];
+          const g = s.enr[1] + s.enr[3] + s.enr[5];
+          const ratio = b ? g / b : 0;
+          const femPct = pct(g, b + g || 1);
+          return {
+            id: s.id || s.emis + s.name,
+            school: s,
+            title: s.name,
+            badge: `GPI: ${b ? ratio.toFixed(2) : '-'}`,
+            badgeColor: ratio >= 0.95 && ratio <= 1.05 ? '#059669' : '#d97706',
+            meta: `${s.circuit} · ${b + g} total pupils`,
+            stats: [
+              ['Boys', b.toLocaleString()],
+              ['Girls', g.toLocaleString()],
+              ['Female %', `${femPct}%`],
+              ['Parity Status', !b ? 'N/A' : ratio >= 0.95 && ratio <= 1.05 ? 'Balanced' : ratio > 1.05 ? 'More Girls' : 'More Boys'],
+            ] as [string, string][],
+            footer: `KG GPI: ${s.enr[0] ? (s.enr[1] / s.enr[0]).toFixed(2) : '-'} · Pri GPI: ${
+              s.enr[2] ? (s.enr[3] / s.enr[2]).toFixed(2) : '-'
+            } · JHS GPI: ${s.enr[4] ? (s.enr[5] / s.enr[4]).toFixed(2) : '-'}`,
+            progress: femPct,
+          };
+        }),
+        charts: [
+          {
+            title: 'Gender Parity Index by Circuit',
+            items: allCircuits.map(c => {
+              const gSchools = filteredSchools.filter(s => s.circuit === c);
+              const b = sum(gSchools.map(s => s.enr[0] + s.enr[2] + s.enr[4]));
+              const g = sum(gSchools.map(s => s.enr[1] + s.enr[3] + s.enr[5]));
+              const ratio = b ? g / b : 0;
+              return [c, Math.min(100, Math.round(ratio * 50)), `GPI ${b ? ratio.toFixed(2) : '-'}`] as [
+                string,
+                number,
+                string
+              ];
+            }),
+          },
+          {
+            title: 'GPI by Class Level (KG1 to JHS3)',
+            items: CL.map((clName, i) => {
+              const b = sum(filteredSchools.map(s => (s.cl || [])[2 * i] || 0));
+              const g = sum(filteredSchools.map(s => (s.cl || [])[2 * i + 1] || 0));
+              const ratio = b ? g / b : 0;
+              return [clName, Math.min(100, Math.round(ratio * 50)), `GPI ${b ? ratio.toFixed(2) : '-'}`] as [
+                string,
+                number,
+                string
+              ];
+            }),
+          },
+        ],
+      };
+    }
+
+    // 5. PUPIL-TEACHER RATIO (PTR)
+    if (kLower.includes('pupil-teacher ratio') || kLower.includes('ptr')) {
+      const highPtr = filteredSchools.filter(s => ptr(s) > target).length;
+      const sorted = [...filteredSchools].sort((a, b) => ptr(b) - ptr(a));
+      const maxPtr = sorted.length ? Math.max(1, ptr(sorted[0])) : 1;
+
+      return {
+        title: 'Pupil-Teacher Ratio (PTR) Breakdown',
+        subtitle: `Comparison of school PTR against the target benchmark (${target}:1) and staffing surplus/deficit`,
+        hasPortalToggle: false,
+        summaryPills: [
+          ['Overall PTR', totTch ? (totPupils / totTch).toFixed(1) : '-'],
+          ['Target PTR', `${target}:1`],
+          [`Above Target (> ${target})`, `${highPtr} schools`],
+          [`Within Target (<= ${target})`, `${filteredSchools.length - highPtr} schools`],
+        ] as [string, string][],
+        tableCols: [
+          'School Name',
+          'Circuit',
+          'Total Pupils',
+          'Total Teachers',
+          'Actual PTR',
+          `Required (at ${target}:1)`,
+          'Surplus / Deficit',
+          'Status',
+        ],
+        tableRows: sorted.map(s => {
+          const p = pupils(s);
+          const t = teachers(s);
+          const req = Math.ceil(p / target);
+          const gap = t - req;
+          const actual = ptr(s);
+          return [
+            s.name,
+            s.circuit,
+            p,
+            t,
+            actual ? actual.toFixed(1) : '-',
+            req,
+            gap > 0 ? `+${gap}` : String(gap),
+            actual > target ? 'High PTR (Deficit)' : 'Optimal PTR',
+          ];
+        }),
+        cards: sorted.map(s => {
+          const p = pupils(s);
+          const t = teachers(s);
+          const req = Math.ceil(p / target);
+          const gap = t - req;
+          const actual = ptr(s);
+          return {
+            id: s.id || s.emis + s.name,
+            school: s,
+            title: s.name,
+            badge: `PTR: ${actual ? actual.toFixed(1) : '-'}`,
+            badgeColor: actual > target ? '#dc2626' : '#059669',
+            meta: `${s.circuit} · ${s.type || 'PUBLIC'}`,
+            stats: [
+              ['Pupils', p.toLocaleString()],
+              ['Teachers', String(t)],
+              [`Required (PTR ${target})`, String(req)],
+              ['Staffing Gap', gap >= 0 ? `+${gap} surplus` : `${gap} deficit`],
+            ] as [string, string][],
+            footer: actual > target ? `Needs ${Math.abs(gap)} additional teacher(s)` : 'Staffing meets PTR target',
+            progress: pct(actual, maxPtr),
+          };
+        }),
+        charts: [
+          {
+            title: 'Pupil-Teacher Ratio by Circuit',
+            items: allCircuits.map(c => {
+              const g = filteredSchools.filter(s => s.circuit === c);
+              const p = sum(g.map(pupils));
+              const t = sum(g.map(teachers));
+              const r = t ? p / t : 0;
+              return [c, Math.min(100, Math.round((r / 50) * 100)), `${r.toFixed(1)}:1`] as [string, number, string];
+            }),
+          },
+          {
+            title: 'Highest PTR Schools',
+            items: sorted.slice(0, 10).map(s => [
+              s.name,
+              pct(ptr(s), maxPtr),
+              `${ptr(s).toFixed(1)}:1 (${pupils(s)}p / ${teachers(s)}t)`,
+            ]) as [string, number, string][],
+          },
+        ],
+      };
+    }
+
+    // 6. PUPILS PER CLASSROOM / OVERCROWDED SCHOOLS
+    if (kLower.includes('classroom') || kLower.includes('45 pupils/room')) {
+      const overcrowded = filteredSchools.filter(s => s.rooms > 0 && pupils(s) / s.rooms > 45);
+      const sorted = [...filteredSchools].sort((a, b) => {
+        const rA = a.rooms > 0 ? pupils(a) / a.rooms : 0;
+        const rB = b.rooms > 0 ? pupils(b) / b.rooms : 0;
+        return rB - rA;
+      });
+      const maxPcr = sorted.length && sorted[0].rooms > 0 ? pupils(sorted[0]) / sorted[0].rooms : 1;
+
+      return {
+        title: 'Classroom Congestion & Pupils per Classroom Breakdown',
+        subtitle: 'School-by-school classroom capacity vs. GES standard threshold (45 pupils per classroom)',
+        hasPortalToggle: false,
+        summaryPills: [
+          ['Overall Pupils / Room', totRooms ? (totPupils / totRooms).toFixed(1) : '-'],
+          ['Total Classrooms', totRooms.toLocaleString()],
+          ['Overcrowded (> 45/room)', `${overcrowded.length} schools`],
+          ['Within Standard (<= 45)', `${filteredSchools.length - overcrowded.length} schools`],
+        ] as [string, string][],
+        tableCols: [
+          'School Name',
+          'Circuit',
+          'Total Pupils',
+          'Total Classrooms',
+          'Pupils / Classroom',
+          'Congestion Status',
+        ],
+        tableRows: sorted.map(s => {
+          const p = pupils(s);
+          const r = s.rooms || 0;
+          const ratio = r > 0 ? p / r : 0;
+          return [
+            s.name,
+            s.circuit,
+            p,
+            r,
+            r > 0 ? ratio.toFixed(1) : '-',
+            !r ? 'No rooms recorded' : ratio > 45 ? 'Overcrowded (> 45)' : 'Adequate Space',
+          ];
+        }),
+        cards: sorted.map(s => {
+          const p = pupils(s);
+          const r = s.rooms || 0;
+          const ratio = r > 0 ? p / r : 0;
+          return {
+            id: s.id || s.emis + s.name,
+            school: s,
+            title: s.name,
+            badge: r > 0 ? `${ratio.toFixed(1)} / room` : 'N/A',
+            badgeColor: ratio > 45 ? '#dc2626' : '#059669',
+            meta: `${s.circuit} · ${r} classrooms`,
+            stats: [
+              ['Total Pupils', p.toLocaleString()],
+              ['Classrooms', String(r)],
+              ['Pupils / Room', r > 0 ? ratio.toFixed(1) : '-'],
+              ['Status', !r ? 'Unrecorded' : ratio > 45 ? 'Overcrowded' : 'Standard'],
+            ] as [string, string][],
+            footer: ratio > 45 ? `Needs ${Math.ceil(p / 45) - r} additional classroom(s) for 45/room` : 'Meets GES classroom norm',
+            progress: pct(ratio, maxPcr || 1),
+          };
+        }),
+        charts: [
+          {
+            title: 'Pupils per Classroom by Class Level (KG1 to JHS3)',
+            items: CL.map((clName, i) => {
+              const p = sum(filteredSchools.map(s => ((s.cl || [])[2 * i] || 0) + ((s.cl || [])[2 * i + 1] || 0)));
+              const r = sum(filteredSchools.map(s => (s.rc || [])[i] || 0));
+              const ratio = r > 0 ? p / r : 0;
+              return [clName, Math.min(100, Math.round((ratio / 70) * 100)), `${r > 0 ? ratio.toFixed(1) : '-'} / room`] as [
+                string,
+                number,
+                string
+              ];
+            }),
+          },
+          {
+            title: 'Most Congested Schools (Pupils / Room)',
+            items: sorted.slice(0, 10).map(s => {
+              const ratio = s.rooms > 0 ? pupils(s) / s.rooms : 0;
+              return [s.name, pct(ratio, maxPcr || 1), `${ratio.toFixed(1)} (${pupils(s)}p / ${s.rooms}rm)`] as [
+                string,
+                number,
+                string
+              ];
+            }),
+          },
+        ],
+      };
+    }
+
+    // 7. TRAINED TEACHERS KPI
+    if (kLower.includes('trained')) {
+      const fullyTrained = filteredSchools.filter(s => teachers(s) > 0 && sum(s.trn || []) >= teachers(s)).length;
+      const sorted = [...filteredSchools].sort((a, b) => {
+        const pA = pct(sum(a.trn || []), teachers(a) || 1);
+        const pB = pct(sum(b.trn || []), teachers(b) || 1);
+        return pB - pA;
+      });
+
+      const profMap: Record<string, number> = {};
+      filteredSchools.forEach(s => {
+        Object.entries(tqo(s).prof || {}).forEach(([k, v]) => {
+          profMap[k] = (profMap[k] || 0) + Number(v);
+        });
+      });
+      const profEntries = Object.entries(profMap).sort((a, b) => b[1] - a[1]);
+
+      return {
+        title: 'Trained Teachers & Professional Qualifications Breakdown',
+        subtitle: 'Professional certification coverage across KG, Primary, and JHS teaching staff',
+        hasPortalToggle: false,
+        summaryPills: [
+          ['Overall Trained %', `${pct(totTrn, totTch || 1)}%`],
+          ['Trained Teachers', totTrn.toLocaleString()],
+          ['Untrained Teachers', Math.max(0, totTch - totTrn).toLocaleString()],
+          ['100% Trained Schools', `${fullyTrained} schools`],
+        ] as [string, string][],
+        tableCols: [
+          'School Name',
+          'Circuit',
+          'Total Teachers',
+          'Trained Teachers',
+          'Untrained Teachers',
+          '% Trained',
+          'KG Trained',
+          'Pri Trained',
+          'JHS Trained',
+        ],
+        tableRows: sorted.map(s => {
+          const tc = teachers(s);
+          const tr = sum(s.trn || []);
+          return [
+            s.name,
+            s.circuit,
+            tc,
+            tr,
+            Math.max(0, tc - tr),
+            `${pct(tr, tc || 1)}%`,
+            s.trn?.[0] || 0,
+            s.trn?.[1] || 0,
+            s.trn?.[2] || 0,
+          ];
+        }),
+        cards: sorted.map(s => {
+          const tc = teachers(s);
+          const tr = sum(s.trn || []);
+          const rate = pct(tr, tc || 1);
+          return {
+            id: s.id || s.emis + s.name,
+            school: s,
+            title: s.name,
+            badge: `${rate}% Trained`,
+            badgeColor: rate >= 80 ? '#059669' : rate >= 50 ? '#d97706' : '#dc2626',
+            meta: `${s.circuit} · ${s.type || 'PUBLIC'}`,
+            stats: [
+              ['Total Teachers', String(tc)],
+              ['Trained', String(tr)],
+              ['Untrained', String(Math.max(0, tc - tr))],
+              ['Portal Verified', String(s.portalTeachers?.length || 0)],
+            ] as [string, string][],
+            footer: `KG: ${s.trn?.[0] || 0} · Primary: ${s.trn?.[1] || 0} · JHS: ${s.trn?.[2] || 0}`,
+            progress: rate,
+          };
+        }),
+        charts: [
+          {
+            title: '% Trained Teachers by Circuit',
+            items: allCircuits.map(c => {
+              const g = filteredSchools.filter(s => s.circuit === c);
+              const tc = sum(g.map(teachers));
+              const tr = sum(g.map(s => sum(s.trn || [])));
+              return [c, pct(tr, tc || 1), `${pct(tr, tc || 1)}% (${tr}/${tc})`] as [string, number, string];
+            }),
+          },
+          {
+            title: 'Professional Qualifications Distribution',
+            items: profEntries.slice(0, 8).map(([k, v]) => [k, pct(v, totTch || 1), `${v} teachers`]) as [
+              string,
+              number,
+              string
+            ][],
+          },
+        ],
+      };
+    }
+
+    // 8. NON-TEACHING STAFF KPI
+    if (kLower.includes('non-teaching')) {
+      const totNts = sum(filteredSchools.map(s => s.nts || 0));
+      const withNts = filteredSchools.filter(s => (s.nts || 0) > 0).length;
+      const sorted = [...filteredSchools].sort((a, b) => (b.nts || 0) - (a.nts || 0));
+      const maxNts = sorted.length ? Math.max(1, sorted[0].nts || 0) : 1;
+
+      return {
+        title: 'Non-Teaching & Administrative Staff Breakdown',
+        subtitle: 'Distribution of non-teaching support personnel across schools and circuits',
+        hasPortalToggle: false,
+        summaryPills: [
+          ['Total Non-Teaching Staff', totNts.toLocaleString()],
+          ['Schools with NTS', `${withNts} schools`],
+          ['Schools without NTS', `${filteredSchools.length - withNts} schools`],
+          ['Total Combined Staff', (totNts + totTch).toLocaleString()],
+        ] as [string, string][],
+        tableCols: [
+          'School Name',
+          'Circuit',
+          'Ownership',
+          'Head Teacher',
+          'Non-Teaching Staff',
+          'Teaching Staff',
+          'Total School Staff',
+        ],
+        tableRows: sorted.map(s => [
+          s.name,
+          s.circuit,
+          s.type || 'PUBLIC',
+          s.head || '-',
+          s.nts || 0,
+          teachers(s),
+          (s.nts || 0) + teachers(s),
+        ]),
+        cards: sorted.map(s => ({
+          id: s.id || s.emis + s.name,
+          school: s,
+          title: s.name,
+          badge: `${s.nts || 0} Non-Teaching`,
+          badgeColor: (s.nts || 0) > 0 ? '#059669' : '#64748b',
+          meta: `${s.circuit} · ${s.type || 'PUBLIC'}`,
+          stats: [
+            ['Non-Teaching Staff', String(s.nts || 0)],
+            ['Teaching Staff', String(teachers(s))],
+            ['Total Staff', String((s.nts || 0) + teachers(s))],
+            ['Pupils', pupils(s).toLocaleString()],
+          ] as [string, string][],
+          footer: `Head: ${s.head || '-'}`,
+          progress: pct(s.nts || 0, maxNts),
+        })),
+        charts: [
+          {
+            title: 'Non-Teaching Staff by Circuit',
+            items: allCircuits.map(c => {
+              const n = sum(filteredSchools.filter(s => s.circuit === c).map(s => s.nts || 0));
+              return [c, pct(n, totNts || 1), `${n} staff`] as [string, number, string];
+            }),
+          },
+          {
+            title: 'Schools with Highest Non-Teaching Staff',
+            items: sorted
+              .filter(s => (s.nts || 0) > 0)
+              .slice(0, 10)
+              .map(s => [s.name, pct(s.nts || 0, maxNts), `${s.nts || 0} staff`]) as [string, number, string][],
+          },
+        ],
+      };
+    }
+
+    // 9. AGED 55 AND ABOVE (RETIREMENT FORECAST)
+    if (kLower.includes('55')) {
+      const tot55_59 = sum(filteredSchools.map(s => tqo(s).age?.[4] || 0));
+      const tot60Plus = sum(filteredSchools.map(s => tqo(s).age?.[5] || 0));
+      const sorted = [...filteredSchools].sort(
+        (a, b) =>
+          (tqo(b).age?.[4] || 0) + (tqo(b).age?.[5] || 0) - ((tqo(a).age?.[4] || 0) + (tqo(a).age?.[5] || 0))
+      );
+
+      return {
+        title: 'Retirement Forecast (Teachers Aged 55 & Above)',
+        subtitle: 'Teachers approaching compulsory retirement age (55–59 and 60+) by school and circuit',
+        hasPortalToggle: false,
+        summaryPills: [
+          ['Total Aged 55+', String(tot55_59 + tot60Plus)],
+          ['Aged 55 - 59 (Retiring in <=5 yrs)', String(tot55_59)],
+          ['Aged 60+ (Due Now)', String(tot60Plus)],
+          ['Schools Affected', String(filteredSchools.filter(s => (tqo(s).age?.[4] || 0) + (tqo(s).age?.[5] || 0) > 0).length)],
+        ] as [string, string][],
+        tableCols: [
+          'School Name',
+          'Circuit',
+          'Total Teachers',
+          'Aged 50-54',
+          'Aged 55-59',
+          'Aged 60+',
+          'Total Aged 55+',
+        ],
+        tableRows: sorted.map(s => {
+          const a4 = tqo(s).age?.[4] || 0;
+          const a5 = tqo(s).age?.[5] || 0;
+          return [s.name, s.circuit, teachers(s), tqo(s).age?.[3] || 0, a4, a5, a4 + a5];
+        }),
+        cards: sorted.map(s => {
+          const a4 = tqo(s).age?.[4] || 0;
+          const a5 = tqo(s).age?.[5] || 0;
+          const tot = a4 + a5;
+          return {
+            id: s.id || s.emis + s.name,
+            school: s,
+            title: s.name,
+            badge: `${tot} Aged 55+`,
+            badgeColor: tot > 0 ? '#d97706' : '#059669',
+            meta: `${s.circuit} · ${teachers(s)} total teachers`,
+            stats: [
+              ['Aged 55 - 59', String(a4)],
+              ['Aged 60+', String(a5)],
+              ['Aged 50 - 54', String(tqo(s).age?.[3] || 0)],
+              ['Total Staff', String(teachers(s))],
+            ] as [string, string][],
+            footer: tot > 0 ? `${tot} replacement teacher(s) needed within 5 years` : 'No immediate retirements due',
+            progress: pct(tot, Math.max(1, teachers(s))),
+          };
+        }),
+        charts: [
+          {
+            title: 'District Teacher Age Profile',
+            items: AGE.map((label, i) => {
+              const cnt = sum(filteredSchools.map(s => tqo(s).age?.[i] || 0));
+              return [label, pct(cnt, totTch || 1), `${cnt} teachers`] as [string, number, string];
+            }),
+          },
+        ],
+      };
+    }
+
+    // 10. FACILITIES / COMPUTERS / TOILETS KPIs
+    if (
+      kLower.includes('facility') ||
+      kLower.includes('computer') ||
+      kLower.includes('toilet')
+    ) {
+      const wf = filteredSchools.filter(s => s.fac);
+      const totPc = sum(wf.map(s => s.fac?.pc || 0));
+      const totSeats = sum(wf.map(s => (s.fac?.tM || 0) + (s.fac?.tF || 0)));
+
+      return {
+        title: `${key} — Infrastructure & WASH Breakdown`,
+        subtitle: 'School-by-school ICT computers, sanitation seats, and core facility availability scores',
+        hasPortalToggle: false,
+        summaryPills: [
+          ['Schools with Facility Data', String(wf.length)],
+          ['Total Computers', totPc.toLocaleString()],
+          ['Pupils / Computer', totPc ? (totPupils / totPc).toFixed(1) : '-'],
+          ['Total Toilet Seats', totSeats.toLocaleString()],
+          ['Pupils / Toilet Seat', totSeats ? (totPupils / totSeats).toFixed(1) : '-'],
+        ] as [string, string][],
+        tableCols: [
+          'School Name',
+          'Circuit',
+          'Facility Score',
+          'Computer Lab',
+          'Computers',
+          'Pupils/PC',
+          'Toilet Seats (M/F)',
+          'Pupils/Seat',
+          'Missing Core Facilities',
+        ],
+        tableRows: filteredSchools.map(s => {
+          const seats = s.fac ? (s.fac.tM || 0) + (s.fac.tF || 0) : 0;
+          const pcs = s.fac?.pc || 0;
+          return [
+            s.name,
+            s.circuit,
+            s.fac ? `${score(s)}/8` : 'n/a',
+            s.fac ? (s.fac.lab ? 'Yes' : 'No') : 'n/a',
+            pcs,
+            pcs ? (pupils(s) / pcs).toFixed(1) : '-',
+            seats,
+            seats ? (pupils(s) / seats).toFixed(1) : '-',
+            missing(s),
+          ];
+        }),
+        cards: filteredSchools.map(s => {
+          const seats = s.fac ? (s.fac.tM || 0) + (s.fac.tF || 0) : 0;
+          const pcs = s.fac?.pc || 0;
+          const sc = score(s);
+          return {
+            id: s.id || s.emis + s.name,
+            school: s,
+            title: s.name,
+            badge: s.fac ? `Score: ${sc}/8` : 'No data',
+            badgeColor: sc >= 6 ? '#059669' : sc >= 4 ? '#d97706' : '#dc2626',
+            meta: `${s.circuit} · ${pupils(s)} pupils`,
+            stats: [
+              ['Computers', `${pcs} (${s.fac?.lab ? 'Has Lab' : 'No Lab'})`],
+              ['Toilet Seats', `${seats} (M:${s.fac?.tM || 0} / F:${s.fac?.tF || 0})`],
+              ['Water & Elec', `${s.fac?.water ? 'Water ✓' : 'No Water'} · ${s.fac?.elec ? 'Elec ✓' : 'No Elec'}`],
+              ['Internet', s.fac?.net ? 'Connected' : 'None'],
+            ] as [string, string][],
+            footer: `Missing: ${missing(s)}`,
+            progress: (sc / 8) * 100,
+          };
+        }),
+        charts: [
+          {
+            title: 'Core Facility Coverage Across Schools (%)',
+            items: FAC.map(([fk, fl]) => {
+              const cnt = wf.filter(s => s.fac?.[fk]).length;
+              return [fl, pct(cnt, wf.length || 1), `${cnt}/${wf.length} (${pct(cnt, wf.length || 1)}%)`] as [
+                string,
+                number,
+                string
+              ];
+            }),
+          },
+        ],
+      };
+    }
+
+    // 11. TEXTBOOKS / RECORD-KEEPING KPIs (Default fallback as well)
+    const wb = filteredSchools.filter(s => s.tb);
+    return {
+      title: `${key} (${val}) — Detailed School Breakdown`,
+      subtitle: 'School-by-school textbook availability across 10 core subjects and statutory record-keeping',
+      hasPortalToggle: false,
+      summaryPills: [
+        ['Selected Metric', `${key}: ${val}`],
+        ['Schools with Textbook Data', String(wb.length)],
+        ['Total Schools Matched', String(filteredSchools.length)],
+      ] as [string, string][],
+      tableCols: ['School Name', 'Circuit', 'Adequate Subjects (/10)', 'Shortage Subjects', 'Records Kept'],
+      tableRows: filteredSchools.map(s => {
+        const adeq = s.tb ? s.tb.filter((x: string) => x === 'ADEQUATE').length : 0;
+        const shortList = s.tb ? TB.filter((_, i) => s.tb?.[i] !== 'ADEQUATE').join(', ') || 'None' : 'No data';
+        return [s.name, s.circuit, s.tb ? `${adeq}/10` : 'n/a', shortList, s.rec ? `${s.rec[0]}/${s.rec[1]}` : '-'];
+      }),
+      cards: filteredSchools.map(s => {
+        const adeq = s.tb ? s.tb.filter((x: string) => x === 'ADEQUATE').length : 0;
+        return {
+          id: s.id || s.emis + s.name,
+          school: s,
+          title: s.name,
+          badge: s.tb ? `${adeq}/10 Adequate` : 'No data',
+          badgeColor: adeq >= 7 ? '#059669' : adeq >= 4 ? '#d97706' : '#dc2626',
+          meta: `${s.circuit} · ${pupils(s)} pupils`,
+          stats: [
+            ['Adequate Subjects', s.tb ? `${adeq} of 10` : 'n/a'],
+            ['Records Kept', s.rec ? `${s.rec[0]}/${s.rec[1]}` : '-'],
+            ['Pupils', pupils(s).toLocaleString()],
+            ['Teachers', String(teachers(s))],
+          ] as [string, string][],
+          footer: s.tb
+            ? `Short in: ${TB.filter((_, i) => s.tb?.[i] !== 'ADEQUATE').join(', ') || 'None'}`
+            : 'No textbook census record',
+          progress: adeq * 10,
+        };
+      }),
+      charts: [
+        {
+          title: 'Textbook Adequacy by Subject (%)',
+          items: TB.map((subj, i) => {
+            const cnt = wb.filter(s => s.tb?.[i] === 'ADEQUATE').length;
+            return [subj, pct(cnt, wb.length || 1), `${cnt}/${wb.length} schools`] as [string, number, string];
+          }),
+        },
+      ],
+    };
+  }, [
+    activePair,
+    filteredSchools,
+    filteredSubmissions,
+    allCircuits,
+    target,
+    teacherSubMode,
+  ]);
+
+  const handleExportDrilldownExcel = () => {
+    if (!drilldown) return;
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([drilldown.tableCols, ...drilldown.tableRows]);
+    XLSX.utils.book_append_sheet(wb, ws, (selectedKey || 'Breakdown').slice(0, 31));
+    XLSX.writeFile(
+      wb,
+      `Tema-Metro-${(selectedKey || 'KPI').replace(/[^a-z0-9]+/gi, '-')}-${new Date().toISOString().slice(0, 10)}.xlsx`
+    );
+  };
+
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(195px, 1fr))',
-        gap: '12px',
-      }}
-    >
-      {items.map(([k, v]) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+      {/* Responsive Interactive KPI Cards Grid */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+          gap: '12px',
+        }}
+      >
+        {items.map(([k, v]) => {
+          const isSelected = selectedKey === k;
+          const isHovered = hoveredKey === k;
+          return (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setSelectedKey(prev => (prev === k ? '' : k))}
+              onMouseEnter={() => setHoveredKey(k)}
+              onMouseLeave={() => setHoveredKey('')}
+              style={{
+                textAlign: 'left',
+                cursor: 'pointer',
+                borderRadius: '10px',
+                border: `1.5px solid ${
+                  isSelected
+                    ? '#10b981'
+                    : isHovered
+                    ? isDark
+                      ? '#10b981'
+                      : '#059669'
+                    : isDark
+                    ? '#334155'
+                    : '#e2e8f0'
+                }`,
+                borderLeft: `4px solid ${isSelected ? '#10b981' : '#047857'}`,
+                backgroundColor: isSelected
+                  ? isDark
+                    ? '#064e3b'
+                    : '#ecfdf5'
+                  : isDark
+                  ? '#1e293b'
+                  : '#ffffff',
+                padding: '13px 15px',
+                transition: 'all 0.18s ease',
+                transform: isHovered || isSelected ? 'translateY(-2px)' : 'none',
+                boxShadow:
+                  isHovered || isSelected
+                    ? isDark
+                      ? '0 8px 20px -4px rgba(0, 0, 0, 0.45)'
+                      : '0 8px 20px -4px rgba(4, 120, 87, 0.15)'
+                    : 'none',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                gap: '6px',
+                color: 'inherit',
+                fontFamily: 'inherit',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                <span
+                  style={{
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: isSelected
+                      ? isDark
+                        ? '#a7f3d0'
+                        : '#065f46'
+                      : isDark
+                      ? '#94a3b8'
+                      : '#64748b',
+                  }}
+                >
+                  {k}
+                </span>
+                <ChevronRight
+                  size={14}
+                  style={{
+                    color: isSelected ? '#10b981' : isDark ? '#64748b' : '#94a3b8',
+                    transform: isSelected ? 'rotate(90deg)' : 'none',
+                    transition: 'transform 0.18s ease',
+                  }}
+                />
+              </div>
+
+              <div
+                style={{
+                  fontSize: '21px',
+                  fontWeight: 800,
+                  color: isDark ? '#f8fafc' : '#0f172a',
+                  lineHeight: 1.2,
+                  wordBreak: 'break-word',
+                }}
+              >
+                {v}
+              </div>
+
+              <div
+                style={{
+                  fontSize: '10.5px',
+                  fontWeight: 600,
+                  color: isSelected ? '#10b981' : isHovered ? '#10b981' : isDark ? '#64748b' : '#94a3b8',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                {isSelected ? 'Viewing details · Click to close' : 'Click to view full details →'}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Multi-View KPI Drill-Down Panel */}
+      {activePair && drilldown && (
         <div
-          key={k}
           style={{
-            borderRadius: '10px',
-            border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
-            borderLeft: '4px solid #047857',
-            backgroundColor: isDark ? '#1e293b' : '#ffffff',
-            padding: '12px 14px',
+            borderRadius: '12px',
+            border: `1.5px solid ${isDark ? '#10b981' : '#059669'}`,
+            backgroundColor: isDark ? '#0f172a' : '#ffffff',
+            padding: '18px',
+            boxShadow: isDark
+              ? '0 12px 32px -8px rgba(0, 0, 0, 0.6)'
+              : '0 12px 32px -8px rgba(4, 120, 87, 0.15)',
           }}
         >
-          <div style={{ fontSize: '12px', color: isDark ? '#94a3b8' : '#64748b' }}>{k}</div>
+          {/* Top Header & View Switcher */}
           <div
             style={{
-              fontSize: '21px',
-              fontWeight: 800,
-              color: isDark ? '#f8fafc' : '#0f172a',
-              marginTop: '2px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+              flexWrap: 'wrap',
+              gap: '12px',
+              paddingBottom: '14px',
+              borderBottom: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
             }}
           >
-            {v}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    padding: '3px 8px',
+                    borderRadius: '99px',
+                    backgroundColor: '#059669',
+                    color: '#ffffff',
+                  }}
+                >
+                  Interactive Breakdown
+                </span>
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: isDark ? '#f8fafc' : '#0f172a' }}>
+                  {drilldown.title}
+                </h3>
+              </div>
+              <p style={{ margin: '4px 0 0', fontSize: '12.5px', color: isDark ? '#94a3b8' : '#64748b' }}>
+                {drilldown.subtitle}
+              </p>
+            </div>
+
+            {/* View Form Switcher Buttons + Export + Close */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <div
+                style={{
+                  display: 'inline-flex',
+                  borderRadius: '8px',
+                  padding: '3px',
+                  backgroundColor: isDark ? '#1e293b' : '#f1f5f9',
+                  border: `1px solid ${isDark ? '#334155' : '#cbd5e1'}`,
+                }}
+              >
+                {(
+                  [
+                    ['cards', 'Cards View', LayoutGrid],
+                    ['table', 'Table View', TableIcon],
+                    ['chart', 'Chart View', BarChart3],
+                  ] as const
+                ).map(([mId, mLabel, Icon]) => {
+                  const active = viewMode === mId;
+                  return (
+                    <button
+                      key={mId}
+                      type="button"
+                      onClick={() => setViewMode(mId)}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        padding: '6px 11px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        fontSize: '12px',
+                        fontWeight: active ? 700 : 500,
+                        backgroundColor: active ? '#059669' : 'transparent',
+                        color: active ? '#ffffff' : isDark ? '#cbd5e1' : '#475569',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <Icon size={13.5} />
+                      {mLabel}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <button
+                type="button"
+                onClick={handleExportDrilldownExcel}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  padding: '7px 12px',
+                  borderRadius: '8px',
+                  border: `1px solid ${isDark ? '#334155' : '#cbd5e1'}`,
+                  backgroundColor: isDark ? '#1e293b' : '#f8fafc',
+                  color: isDark ? '#f8fafc' : '#0f172a',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                <Download size={13.5} /> Export (.xlsx)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedKey('')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '7px 11px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  backgroundColor: isDark ? '#334155' : '#e2e8f0',
+                  color: isDark ? '#f8fafc' : '#0f172a',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                <X size={14} /> Close
+              </button>
+            </div>
           </div>
+
+          {/* Summary Mini-KPI Strip */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+              gap: '10px',
+              marginTop: '14px',
+            }}
+          >
+            {drilldown.summaryPills.map(([sLabel, sVal]) => (
+              <div
+                key={sLabel}
+                style={{
+                  padding: '9px 12px',
+                  borderRadius: '8px',
+                  backgroundColor: isDark ? '#1e293b' : '#f8fafc',
+                  border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+                }}
+              >
+                <div style={{ fontSize: '11px', color: isDark ? '#94a3b8' : '#64748b' }}>{sLabel}</div>
+                <div style={{ fontSize: '15px', fontWeight: 800, marginTop: '2px' }}>{sVal}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Filter, Search & Portal Staff Toggle Bar */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '10px',
+              marginTop: '14px',
+              marginBottom: '14px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: '240px', flexWrap: 'wrap' }}>
+              <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
+                <Search
+                  size={14}
+                  style={{
+                    position: 'absolute',
+                    left: '10px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    color: '#64748b',
+                  }}
+                />
+                <input
+                  type="text"
+                  placeholder="Filter breakdown by school, EMIS, circuit, head teacher or staff..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '7px 10px 7px 30px',
+                    borderRadius: '8px',
+                    border: `1px solid ${isDark ? '#334155' : '#cbd5e1'}`,
+                    backgroundColor: isDark ? '#1e293b' : '#f8fafc',
+                    color: 'inherit',
+                    fontSize: '12.5px',
+                  }}
+                />
+              </div>
+
+              <select
+                value={circuitFilter}
+                onChange={e => setCircuitFilter(e.target.value)}
+                style={{
+                  padding: '7px 10px',
+                  borderRadius: '8px',
+                  border: `1px solid ${isDark ? '#334155' : '#cbd5e1'}`,
+                  backgroundColor: isDark ? '#1e293b' : '#f8fafc',
+                  color: 'inherit',
+                  fontSize: '12.5px',
+                }}
+              >
+                <option value="All">All Circuits ({allCircuits.length})</option>
+                {allCircuits.map(c => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {drilldown.hasPortalToggle && (
+              <div
+                style={{
+                  display: 'inline-flex',
+                  borderRadius: '8px',
+                  padding: '3px',
+                  backgroundColor: isDark ? '#1e293b' : '#f1f5f9',
+                  border: `1px solid ${isDark ? '#334155' : '#cbd5e1'}`,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setTeacherSubMode('schools')}
+                  style={{
+                    padding: '5px 10px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    fontSize: '12px',
+                    fontWeight: teacherSubMode === 'schools' ? 700 : 500,
+                    backgroundColor: teacherSubMode === 'schools' ? '#0284c7' : 'transparent',
+                    color: teacherSubMode === 'schools' ? '#fff' : 'inherit',
+                    cursor: 'pointer',
+                  }}
+                >
+                  By School ({filteredSchools.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTeacherSubMode('portal')}
+                  style={{
+                    padding: '5px 10px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    fontSize: '12px',
+                    fontWeight: teacherSubMode === 'portal' ? 700 : 500,
+                    backgroundColor: teacherSubMode === 'portal' ? '#0284c7' : 'transparent',
+                    color: teacherSubMode === 'portal' ? '#fff' : 'inherit',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Individual Portal Staff ({filteredSubmissions.length})
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* VIEW FORM 1: RESPONSIVE CARDS GRID VIEW */}
+          {viewMode === 'cards' && (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(275px, 1fr))',
+                gap: '12px',
+                maxHeight: '540px',
+                overflowY: 'auto',
+                paddingRight: '4px',
+              }}
+            >
+              {drilldown.cards.map(card => (
+                <div
+                  key={card.id}
+                  style={{
+                    borderRadius: '10px',
+                    border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+                    backgroundColor: isDark ? '#1e293b' : '#f8fafc',
+                    padding: '12px 14px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    gap: '8px',
+                  }}
+                >
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                      <div style={{ fontWeight: 700, fontSize: '13.5px', color: isDark ? '#f8fafc' : '#0f172a' }}>
+                        {card.title}
+                      </div>
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          padding: '2px 8px',
+                          borderRadius: '99px',
+                          backgroundColor: card.badgeColor,
+                          color: '#ffffff',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {card.badge}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '11.5px', color: isDark ? '#94a3b8' : '#64748b', marginTop: '2px' }}>
+                      {card.meta}
+                    </div>
+                  </div>
+
+                  {/* 2x2 Mini Stats Grid inside Card */}
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: '6px',
+                      padding: '8px',
+                      borderRadius: '8px',
+                      backgroundColor: isDark ? '#0f172a' : '#ffffff',
+                      border: `1px solid ${isDark ? '#1e293b' : '#e2e8f0'}`,
+                      fontSize: '11.5px',
+                    }}
+                  >
+                    {card.stats.map(([stK, stV]) => (
+                      <div key={stK}>
+                        <div style={{ color: isDark ? '#94a3b8' : '#64748b', fontSize: '10.5px' }}>{stK}</div>
+                        <div style={{ fontWeight: 700, color: isDark ? '#e2e8f0' : '#1e293b' }}>{stV}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Mini Progress Bar */}
+                  <div
+                    style={{
+                      height: '5px',
+                      borderRadius: '99px',
+                      backgroundColor: isDark ? '#334155' : '#e2e8f0',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <div
+                      style={{
+                        height: '100%',
+                        width: `${Math.min(100, Math.max(0, card.progress || 0))}%`,
+                        backgroundColor: card.badgeColor || '#10b981',
+                      }}
+                    />
+                  </div>
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: '8px',
+                      fontSize: '11px',
+                      color: isDark ? '#94a3b8' : '#64748b',
+                    }}
+                  >
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {card.footer}
+                    </span>
+                    {onInspectSchool && card.school && (
+                      <button
+                        type="button"
+                        onClick={() => onInspectSchool(card.school)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#10b981',
+                          fontWeight: 700,
+                          fontSize: '11px',
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                          padding: 0,
+                        }}
+                      >
+                        Open School →
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* VIEW FORM 2: FULL SPREADSHEET TABLE VIEW */}
+          {viewMode === 'table' && (
+            <div style={{ maxHeight: '540px', overflowY: 'auto' }}>
+              <Tbl isDark={isDark} cols={drilldown.tableCols} rows={drilldown.tableRows} />
+            </div>
+          )}
+
+          {/* VIEW FORM 3: VISUAL BAR CHART BREAKDOWN VIEW */}
+          {viewMode === 'chart' && (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+                gap: '14px',
+              }}
+            >
+              {drilldown.charts.map(ch => (
+                <Card key={ch.title} title={ch.title} isDark={isDark}>
+                  {ch.items.map(([label, valPct, noteStr]) => (
+                    <Bar key={label} label={label} value={valPct} note={noteStr} isDark={isDark} />
+                  ))}
+                </Card>
+              ))}
+            </div>
+          )}
         </div>
-      ))}
+      )}
     </div>
   );
 }
@@ -1580,6 +3155,15 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <Kpis
                 isDark={isDark}
+                schools={schools}
+                validSubmissions={validSubmissions}
+                target={target}
+                onInspectSchool={s => {
+                  setTab('schools');
+                  setQ(s.name);
+                  setCirFilter('All');
+                  setOpenSchoolKey(s.emis + s.name);
+                }}
                 items={[
                   ['Schools', String(schools.length)],
                   ['Pupils', total.toLocaleString()],
@@ -1942,6 +3526,15 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <Kpis
                 isDark={isDark}
+                schools={schools}
+                validSubmissions={validSubmissions}
+                target={target}
+                onInspectSchool={s => {
+                  setTab('schools');
+                  setQ(s.name);
+                  setCirFilter('All');
+                  setOpenSchoolKey(s.emis + s.name);
+                }}
                 items={[
                   ['Boys', totB.toLocaleString()],
                   ['Girls', totG.toLocaleString()],
@@ -2118,6 +3711,15 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <Kpis
                 isDark={isDark}
+                schools={schools}
+                validSubmissions={validSubmissions}
+                target={target}
+                onInspectSchool={s => {
+                  setTab('schools');
+                  setQ(s.name);
+                  setCirFilter('All');
+                  setOpenSchoolKey(s.emis + s.name);
+                }}
                 items={[
                   ['Teachers (staff list / portal)', String(T(s => tqo(s).n))],
                   ['Male / Female', M + ' / ' + F],
@@ -2207,6 +3809,15 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <Kpis
                 isDark={isDark}
+                schools={schools}
+                validSubmissions={validSubmissions}
+                target={target}
+                onInspectSchool={s => {
+                  setTab('schools');
+                  setQ(s.name);
+                  setCirFilter('All');
+                  setOpenSchoolKey(s.emis + s.name);
+                }}
                 items={[
                   ['Schools with facility data', String(wf.length)],
                   ['Computers', String(pc)],
@@ -2370,6 +3981,15 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <Kpis
                 isDark={isDark}
+                schools={schools}
+                validSubmissions={validSubmissions}
+                target={target}
+                onInspectSchool={s => {
+                  setTab('schools');
+                  setQ(s.name);
+                  setCirFilter('All');
+                  setOpenSchoolKey(s.emis + s.name);
+                }}
                 items={[
                   ['Schools with textbook data', String(wb.length)],
                   [
