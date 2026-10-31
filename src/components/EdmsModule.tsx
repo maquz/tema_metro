@@ -1,35 +1,70 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { collection, doc, addDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
+import {
+  BookOpen,
+  Building2,
+  FileText,
+  GraduationCap,
+  LayoutDashboard,
+  School,
+  Upload,
+  Users,
+  Sun,
+  Moon,
+  ArrowLeft,
+  Download,
+  Printer,
+  Plus,
+  CheckCircle2,
+  Edit3,
+} from 'lucide-react';
 
-const LV: [string, string, number][] = [
-  ['KG', 'Kindergarten', 2],
-  ['PRI', 'Primary', 6],
-  ['JHS', 'Junior High', 3],
+const FAC: [string, string][] = [
+  ['lab', 'Computer lab'],
+  ['sci', 'Science lab'],
+  ['elec', 'Electricity'],
+  ['net', 'Internet'],
+  ['water', 'Drinking water'],
+  ['toilet', 'Toilets'],
+  ['field', 'Playing field'],
+  ['scr', 'Staff common room'],
 ];
 
-const FAC = [
-  'Library',
-  'ICT lab',
-  'Science lab',
-  'Toilets (gender-separated)',
-  'Borehole / water',
-  'Electricity',
-  'Internet',
-  'Adequate furniture',
-  'Sports field',
-  'Accessibility ramp',
+const FAC2: [string, string][] = [
+  ['work', 'Technical workshop'],
+  ['canteen', 'Canteen'],
+  ['tv', 'Television'],
+  ['proj', 'Projector'],
+  ['aid', 'First aid box'],
+  ['wash', 'Handwashing water'],
+  ['walled', 'Walled / fenced'],
+  ['watch', 'Watchman'],
+  ['lights', 'Security lights'],
 ];
 
-const SUBJ = [
+const CL = ['KG1', 'KG2', 'P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'JH1', 'JH2', 'JH3'];
+const TB = [
   'English',
-  'Mathematics',
-  'Science',
+  'Maths',
+  'Integrated Science',
   'Social Studies',
+  'Physical Education',
+  'ICT',
+  'RME',
+  'French',
+  'Home Economics',
+  'Pre-Tech',
+  'Visual Art',
   'Ghanaian Language',
 ];
+const LANG = ['Ga', 'Akwapim Twi', 'Asante Twi', 'Ewe', 'Visual Art', 'Home Economics', 'Pre-Tech'];
+const COND = ['Walls', 'Doors', 'Windows', 'Floors', 'Board'];
+const AGE = ['Under 30', '30-39', '40-49', '50-54', '55-59', '60+'];
+const SVC = ['Under 5 yrs', '5-14 yrs', '15-24 yrs', '25+ yrs'];
+const NOW = new Date().getFullYear();
 
 const DEFAULT_CIRCUITS = [
   'ASHAMANG',
@@ -41,23 +76,719 @@ const DEFAULT_CIRCUITS = [
   'TWEDAASE',
 ];
 
-export interface EdmsSchool {
-  id: string;
-  firestoreId?: string;
-  name: string;
-  code: string;
-  cat: string;
-  own: string;
-  circuit: string;
-  head: string;
-  status: string;
-  enr: Record<string, [number, number]>;
-  teachers: [number, number]; // [have, professionallyQualified]
-  portalTeachersCount: number;
-  portalQualifiedCount: number;
-  fac: Record<string, boolean>;
-  books: Record<string, [number, number]>; // [required, available]
-  gps?: string;
+const num = (v: any) => {
+  const x = parseFloat(v);
+  return isNaN(x) ? 0 : x;
+};
+const txt = (v: any) => String(v === undefined || v === null ? '' : v).trim();
+const yes = (v: any) => {
+  const s = txt(v).toUpperCase();
+  return s === 'YES' || s === 'TRUE' || s === '1' || s === 'CHECKED' || s === 'OK';
+};
+const norm = (v: any) => txt(v).toUpperCase().replace(/[^A-Z0-9]/g, '');
+const pct = (a: number, b: number) => (b ? Math.round((a * 100) / b) : 0);
+const sum = (a: number[]) => a.reduce((x, y) => x + y, 0);
+const inc = (o: Record<string, number>, k: string) => {
+  o[k] = (o[k] || 0) + 1;
+};
+const yr = (v: any) => {
+  if (!v) return 0;
+  const d =
+    v instanceof Date
+      ? v
+      : typeof v === 'number'
+      ? new Date(Math.round((v - 25569) * 86400000))
+      : new Date(txt(v));
+  const y = d.getFullYear();
+  return isNaN(y) || y < 1900 ? 0 : y;
+};
+
+const pupils = (s: any) => sum(s.enr || []);
+const teachers = (s: any) => sum(s.tch || []);
+const ptr = (s: any) => (teachers(s) ? pupils(s) / teachers(s) : 0);
+const score = (s: any) => FAC.filter(([k]) => s.fac && s.fac[k]).length;
+const tqo = (s: any) =>
+  s.tq || { n: 0, M: 0, F: 0, age: [0, 0, 0, 0, 0, 0], svc: [0, 0, 0, 0], rank: {}, prof: {}, sub: {} };
+const missing = (s: any) =>
+  s.fac ? FAC.filter(([k]) => !s.fac[k]).map(([, l]) => l).join(', ') || 'none' : 'no facility data';
+const poorItems = (s: any) =>
+  s.fac && s.fac.cond ? s.fac.cond.filter((c: string) => c === 'POOR').length : 0;
+
+// Official GES 5-Sheet Census Workbook Parser (from tema-metro-edms/src/EDMS.tsx)
+function parseOfficialCensusWorkbook(wb: XLSX.WorkBook) {
+  const rows = (name: string, range: string): any[][] => {
+    const ws = wb.Sheets[name];
+    if (!ws) throw new Error('Sheet ' + name + ' not found');
+    return XLSX.utils
+      .sheet_to_json<any[]>(ws, { header: 1, defval: '', range })
+      .filter(r => /^\d+$/.test(txt(r[0])));
+  };
+  const fac = new Map<string, any>();
+  if (wb.Sheets['FACILITIES']) {
+    rows('FACILITIES', 'A1:BM500').forEach(r => {
+      fac.set(norm(r[3]), {
+        ht: yes(r[4]),
+        scr: yes(r[5]),
+        store: yes(r[6]),
+        lab: yes(r[7]),
+        sci: yes(r[8]),
+        work: yes(r[9]),
+        canteen: yes(r[10]),
+        field: yes(r[11]),
+        fieldC: txt(r[12]).toUpperCase(),
+        aid: yes(r[18]),
+        tv: yes(r[20]),
+        proj: yes(r[21]),
+        net: yes(r[22]),
+        prov: txt(r[23]),
+        pc: num(r[25]),
+        elec: yes(r[19]),
+        water: yes(r[26]),
+        wash: yes(r[28]),
+        toilet: yes(r[35]),
+        tM: num(r[37]),
+        tF: num(r[38]),
+        tT: num(r[39]),
+        walled: yes(r[48]),
+        gated: yes(r[49]),
+        lights: yes(r[50]),
+        watch: yes(r[51]),
+        cond: [r[53], r[55], r[57], r[59], r[61]].map(c => txt(c).toUpperCase()),
+      });
+    });
+  }
+
+  const books = new Map<string, any>();
+  const booksSheetName = wb.SheetNames.find(n => norm(n) === 'BOOKSRECORDS');
+  if (booksSheetName) {
+    rows(booksSheetName, 'A1:BN500').forEach(r => {
+      const rec = r
+        .slice(4, 40)
+        .map(v => txt(v).toUpperCase())
+        .filter(v => ['YES', 'NO', 'ADEQUATE', 'INADEQUATE'].includes(v));
+      const lang: number[] = [];
+      for (let k = 0; k < 14; k++) lang.push(yes(r[52 + k]) ? 1 : 0);
+      books.set(norm(r[3]), {
+        tb: TB.map((_, i) => txt(r[40 + i]).toUpperCase()),
+        rec: [rec.filter(v => v === 'YES' || v === 'ADEQUATE').length, rec.length],
+        lang,
+      });
+    });
+  }
+
+  const tmap = new Map<string, any>();
+  if (wb.Sheets['TEACHING STAFF']) {
+    rows('TEACHING STAFF', 'A1:AO7000')
+      .filter(r => txt(r[3]))
+      .forEach(r => {
+        const k = norm(r[3]);
+        const a = tmap.get(k) || {
+          n: 0,
+          M: 0,
+          F: 0,
+          age: [0, 0, 0, 0, 0, 0],
+          svc: [0, 0, 0, 0],
+          rank: {},
+          prof: {},
+          sub: {},
+        };
+        a.n++;
+        const sex = txt(r[12]).toUpperCase();
+        if (sex.startsWith('M')) a.M++;
+        else if (sex.startsWith('F')) a.F++;
+        const by = yr(r[11]);
+        if (by) {
+          const g = NOW - by;
+          a.age[g < 30 ? 0 : g < 40 ? 1 : g < 50 ? 2 : g < 55 ? 3 : g < 60 ? 4 : 5]++;
+        }
+        const fy = yr(r[26]);
+        if (fy) {
+          const v = NOW - fy;
+          a.svc[v < 5 ? 0 : v < 15 ? 1 : v < 25 ? 2 : 3]++;
+        }
+        inc(a.rank, txt(r[14]).toUpperCase() || 'UNSPECIFIED');
+        inc(a.prof, txt(r[27]).toUpperCase() || 'UNSPECIFIED');
+        inc(a.sub, txt(r[23]).toUpperCase() || 'UNSPECIFIED');
+        tmap.set(k, a);
+      });
+  }
+
+  const enr = new Map<string, any>();
+  const pairs = [22, 25, 31, 34, 37, 40, 43, 46, 52, 55, 58];
+  if (wb.Sheets['ENROLMENT']) {
+    rows('ENROLMENT', 'A1:IE500').forEach(r => {
+      const cl: number[] = [];
+      pairs.forEach(c => {
+        cl.push(num(r[c]), num(r[c + 1]));
+      });
+      enr.set(txt(r[3]), {
+        enr: [num(r[28]), num(r[29]), num(r[49]), num(r[50]), num(r[61]), num(r[62])],
+        cl,
+        rc: r.slice(103, 114).map(num),
+        tch: [num(r[72]), num(r[81]), num(r[90])],
+        trn: [num(r[66]), num(r[75]), num(r[84])],
+        nts: num(r[102]),
+        rooms: sum(r.slice(103, 114).map(num)),
+      });
+    });
+  }
+
+  const stat = { teachers: 0, facilities: 0, books: 0 };
+  const schools = rows('BASIC INFO', 'A1:AG500')
+    .filter(r => txt(r[4]))
+    .map(r => {
+      const k = norm(r[4]);
+      const e = enr.get(txt(r[3])) || {
+        enr: [0, 0, 0, 0, 0, 0],
+        cl: Array(22).fill(0),
+        rc: Array(11).fill(0),
+        tch: [0, 0, 0],
+        trn: [0, 0, 0],
+        nts: 0,
+        rooms: 0,
+      };
+      const f = fac.get(k) || null;
+      const b = books.get(k) || {};
+      const t = tmap.get(k) || null;
+      if (f) stat.facilities++;
+      if (b.tb) stat.books++;
+      if (t) stat.teachers++;
+      return {
+        emis: txt(r[3]),
+        name: txt(r[4]),
+        district: txt(r[1]) || 'TEMA METRO',
+        circuit: txt(r[2]) || 'ASHAMANG',
+        head: (txt(r[5]) + ' ' + txt(r[6])).trim(),
+        levels: txt(r[8]) || 'KG, PRY & JHS',
+        type: txt(r[9]) || 'PUBLIC',
+        mgmt: txt(r[20]) || 'MA/DA',
+        phone: txt(r[26]),
+        email: txt(r[27]),
+        deprived: yes(r[24]),
+        ...e,
+        fac: f,
+        tb: b.tb || null,
+        rec: b.rec || null,
+        lang: b.lang || null,
+        tq: t,
+      };
+    });
+  return { schools, stat };
+}
+
+const mkS = (
+  i: number,
+  name: string,
+  circuit: string,
+  cl: number[],
+  tch: number[],
+  fac: any,
+  tb: string[]
+) => {
+  const sB = (a: number, b: number) => sum(cl.slice(a, b).filter((_, k) => k % 2 === 0));
+  const sG = (a: number, b: number) => sum(cl.slice(a, b).filter((_, k) => k % 2 === 1));
+  const n = sum(tch);
+  return {
+    emis: 'TM00' + i,
+    name,
+    district: 'TEMA METRO',
+    circuit,
+    head: 'Head ' + i,
+    levels: 'KG, PRY & JHS',
+    type: 'PUBLIC',
+    mgmt: 'MA/DA',
+    phone: '',
+    email: '',
+    deprived: false,
+    enr: [sB(0, 4), sG(0, 4), sB(4, 16), sG(4, 16), sB(16, 22), sG(16, 22)],
+    cl,
+    rc: [1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2],
+    tch,
+    trn: tch.map(t => Math.max(0, t - 1)),
+    nts: 3,
+    rooms: 14,
+    tq: {
+      n,
+      M: Math.floor(n / 3),
+      F: n - Math.floor(n / 3),
+      age: [1, 3, 4, 2, 1, 0],
+      svc: [2, 4, 3, 2],
+      rank: { 'ASST. DIR. I': 3, 'SUPT. I': 4 },
+      prof: { DEGREE: 5, DIPLOMA: 3 },
+      sub: { GENERAL: 6, MATHS: 2 },
+    },
+    tb,
+    rec: [30, 36],
+    lang: [1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0],
+    fac: {
+      ...fac,
+      cond: ['GOOD', 'POOR', 'FAIR', 'POOR', 'GOOD'],
+      fieldC: 'FAIR',
+      prov: 'MTN',
+      tM: 6,
+      tF: 8,
+      tT: 2,
+    },
+  };
+};
+
+const SAMPLE = [
+  mkS(
+    1,
+    'Sample Basic School A',
+    'ASHAMANG',
+    [20, 22, 20, 21, 35, 38, 36, 34, 35, 33, 34, 36, 32, 30, 31, 33, 30, 28, 29, 30, 27, 26],
+    [3, 12, 8],
+    {
+      lab: true,
+      sci: false,
+      elec: true,
+      net: true,
+      water: true,
+      toilet: true,
+      field: true,
+      scr: true,
+      pc: 25,
+      proj: true,
+      tv: true,
+    },
+    [
+      'ADEQUATE',
+      'ADEQUATE',
+      'INADEQUATE',
+      'ADEQUATE',
+      'NOT AVAILABLE',
+      'INADEQUATE',
+      'ADEQUATE',
+      'NOT AVAILABLE',
+      'ADEQUATE',
+      'ADEQUATE',
+      'INADEQUATE',
+      'ADEQUATE',
+    ]
+  ),
+  mkS(
+    2,
+    'Sample Primary School B',
+    'AWUDUM',
+    [15, 14, 14, 13, 25, 28, 27, 26, 24, 25, 26, 24, 23, 22, 22, 21, 0, 0, 0, 0, 0, 0],
+    [2, 6, 0],
+    {
+      lab: false,
+      sci: false,
+      elec: true,
+      net: false,
+      water: false,
+      toilet: true,
+      field: false,
+      scr: true,
+      pc: 0,
+    },
+    [
+      'INADEQUATE',
+      'INADEQUATE',
+      'NOT AVAILABLE',
+      'ADEQUATE',
+      'NOT AVAILABLE',
+      'NOT AVAILABLE',
+      'INADEQUATE',
+      'NOT AVAILABLE',
+      'INADEQUATE',
+      'NOT AVAILABLE',
+      'NOT AVAILABLE',
+      'INADEQUATE',
+    ]
+  ),
+  mkS(
+    3,
+    'Sample JHS C',
+    'TWEDAASE',
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 40, 44, 38, 42, 42, 44],
+    [0, 0, 9],
+    {
+      lab: true,
+      sci: true,
+      elec: true,
+      net: true,
+      water: true,
+      toilet: true,
+      field: false,
+      scr: true,
+      pc: 30,
+      proj: true,
+    },
+    [
+      'ADEQUATE',
+      'ADEQUATE',
+      'ADEQUATE',
+      'ADEQUATE',
+      'ADEQUATE',
+      'ADEQUATE',
+      'ADEQUATE',
+      'ADEQUATE',
+      'ADEQUATE',
+      'INADEQUATE',
+      'ADEQUATE',
+      'ADEQUATE',
+    ]
+  ),
+];
+
+// Reusable UI Components matching tema-metro-edms
+function Bar({ label, value, note, isDark }: { label: string; value: number; note?: string; isDark?: boolean }) {
+  return (
+    <div style={{ marginBottom: '10px' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          gap: '8px',
+          fontSize: '12px',
+          color: isDark ? '#cbd5e1' : '#475569',
+          marginBottom: '3px',
+        }}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+        <span style={{ flexShrink: 0, fontWeight: 600 }}>{note || value + '%'}</span>
+      </div>
+      <div
+        style={{
+          height: '8px',
+          borderRadius: '4px',
+          backgroundColor: isDark ? '#334155' : '#e2e8f0',
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            height: '100%',
+            borderRadius: '4px',
+            backgroundColor: '#059669',
+            width: Math.min(100, Math.max(0, value)) + '%',
+            transition: 'width 0.25s ease',
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function Card({
+  title,
+  children,
+  isDark,
+  rightAction,
+}: {
+  title: string;
+  children: React.ReactNode;
+  isDark?: boolean;
+  rightAction?: React.ReactNode;
+}) {
+  return (
+    <section
+      style={{
+        borderRadius: '10px',
+        border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+        backgroundColor: isDark ? '#1e293b' : '#ffffff',
+        padding: '16px',
+        boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '8px', flexWrap: 'wrap' }}>
+        <h2
+          style={{
+            margin: 0,
+            fontSize: '14px',
+            fontWeight: 700,
+            color: isDark ? '#f8fafc' : '#0f172a',
+          }}
+        >
+          {title}
+        </h2>
+        {rightAction}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Tbl({ cols, rows, isDark }: { cols: string[]; rows: any[][]; isDark?: boolean }) {
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table
+        style={{
+          width: '100%',
+          whiteSpace: 'nowrap',
+          textAlign: 'left',
+          fontSize: '12.5px',
+          color: isDark ? '#e2e8f0' : '#334155',
+          borderCollapse: 'collapse',
+        }}
+      >
+        <thead>
+          <tr style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
+            {cols.map(c => (
+              <th key={c} style={{ padding: '6px 12px 6px 0', fontWeight: 600 }}>
+                {c}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr
+              key={i}
+              style={{
+                borderTop: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+              }}
+            >
+              {r.map((v, j) => (
+                <td key={j} style={{ padding: '6px 12px 6px 0' }}>
+                  {v}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function Dist({ title, rows, isDark }: { title: string; rows: [string, number][]; isDark?: boolean }) {
+  const tot = sum(rows.map(r => r[1]));
+  return (
+    <Card title={title} isDark={isDark}>
+      {rows.length > 0 ? (
+        rows.map(([l, v]) => (
+          <Bar key={l} label={l} value={pct(v, tot)} note={v + ' (' + pct(v, tot) + '%)'} isDark={isDark} />
+        ))
+      ) : (
+        <div style={{ fontSize: '12px', color: isDark ? '#94a3b8' : '#64748b' }}>No distribution records</div>
+      )}
+    </Card>
+  );
+}
+
+function Kpis({ items, isDark }: { items: [string, string][]; isDark?: boolean }) {
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(195px, 1fr))',
+        gap: '12px',
+      }}
+    >
+      {items.map(([k, v]) => (
+        <div
+          key={k}
+          style={{
+            borderRadius: '10px',
+            border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+            borderLeft: '4px solid #047857',
+            backgroundColor: isDark ? '#1e293b' : '#ffffff',
+            padding: '12px 14px',
+          }}
+        >
+          <div style={{ fontSize: '12px', color: isDark ? '#94a3b8' : '#64748b' }}>{k}</div>
+          <div
+            style={{
+              fontSize: '21px',
+              fontWeight: 800,
+              color: isDark ? '#f8fafc' : '#0f172a',
+              marginTop: '2px',
+            }}
+          >
+            {v}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Build the 7 Official Directorate Reports
+function buildReports(S: any[], t: number) {
+  const circuits = Array.from(new Set(S.map(s => s.circuit))).sort();
+  const f = (s: any, k: string) => (s.fac ? (s.fac[k] ? 'Yes' : 'No') : 'n/a');
+  return [
+    {
+      id: 'census',
+      title: 'School Census Report',
+      cols: [
+        'EMIS',
+        'School',
+        'Circuit',
+        'Type',
+        'Levels',
+        'KG',
+        'Primary',
+        'JHS',
+        'Boys',
+        'Girls',
+        'Total',
+        'Teachers',
+        'Trained',
+        'Classrooms',
+        'PTR',
+        'Facility score',
+      ],
+      rows: S.map(s => [
+        s.emis,
+        s.name,
+        s.circuit,
+        s.type,
+        s.levels,
+        s.enr[0] + s.enr[1],
+        s.enr[2] + s.enr[3],
+        s.enr[4] + s.enr[5],
+        s.enr[0] + s.enr[2] + s.enr[4],
+        s.enr[1] + s.enr[3] + s.enr[5],
+        pupils(s),
+        teachers(s),
+        sum(s.trn || []),
+        s.rooms,
+        ptr(s).toFixed(1),
+        s.fac ? score(s) + '/8' : 'n/a',
+      ]),
+    },
+    {
+      id: 'district',
+      title: 'District Statistical Report',
+      cols: [
+        'Circuit',
+        'Schools',
+        'KG',
+        'Primary',
+        'JHS',
+        'Total',
+        'GPI',
+        'Teachers',
+        'PTR',
+        'Classrooms',
+      ],
+      rows: circuits.map(c => {
+        const g = S.filter(s => s.circuit === c);
+        const b = sum(g.map(s => s.enr[0] + s.enr[2] + s.enr[4]));
+        const gl = sum(g.map(s => s.enr[1] + s.enr[3] + s.enr[5]));
+        const tc = sum(g.map(teachers));
+        return [
+          c,
+          g.length,
+          sum(g.map(s => s.enr[0] + s.enr[1])),
+          sum(g.map(s => s.enr[2] + s.enr[3])),
+          sum(g.map(s => s.enr[4] + s.enr[5])),
+          b + gl,
+          b ? (gl / b).toFixed(2) : '-',
+          tc,
+          tc ? ((b + gl) / tc).toFixed(1) : '-',
+          sum(g.map(s => s.rooms)),
+        ];
+      }),
+    },
+    {
+      id: 'staffing',
+      title: 'Staffing Analysis Report',
+      cols: [
+        'School',
+        'Circuit',
+        'Pupils',
+        'Teachers',
+        'Male',
+        'Female',
+        'Trained',
+        'Aged 55+',
+        'Required at PTR ' + t,
+        'Surplus(+)/Deficit(-)',
+      ],
+      rows: S.map(s => [
+        s.name,
+        s.circuit,
+        pupils(s),
+        teachers(s),
+        tqo(s).M,
+        tqo(s).F,
+        sum(s.trn || []),
+        tqo(s).age[4] + tqo(s).age[5],
+        Math.ceil(pupils(s) / t),
+        teachers(s) - Math.ceil(pupils(s) / t),
+      ]),
+    },
+    {
+      id: 'infra',
+      title: 'Infrastructure Gap Report',
+      cols: [
+        'School',
+        'Circuit',
+        'Facility score',
+        'Missing facilities',
+        'Toilet seats',
+        'Pupils per seat',
+        'Poor-condition elements',
+      ],
+      rows: S.map(s => {
+        const seats = s.fac ? (s.fac.tM || 0) + (s.fac.tF || 0) : 0;
+        return [
+          s.name,
+          s.circuit,
+          s.fac ? score(s) + '/8' : 'n/a',
+          missing(s),
+          seats,
+          seats ? (pupils(s) / seats).toFixed(1) : '-',
+          poorItems(s),
+        ];
+      }),
+    },
+    {
+      id: 'tbsubject',
+      title: 'Textbook Distribution Report',
+      cols: ['Subject', 'Adequate', 'Inadequate', 'Not available', 'Pupils in shortage schools'],
+      rows: TB.map((n, i) => {
+        const w = S.filter(s => s.tb);
+        return [
+          n,
+          w.filter(s => s.tb[i] === 'ADEQUATE').length,
+          w.filter(s => s.tb[i] === 'INADEQUATE').length,
+          w.filter(s => s.tb[i] === 'NOT AVAILABLE').length,
+          sum(w.filter(s => s.tb[i] === 'INADEQUATE' || s.tb[i] === 'NOT AVAILABLE').map(pupils)),
+        ];
+      }),
+    },
+    {
+      id: 'tbschool',
+      title: 'Textbook Status by School',
+      cols: ['School', 'Circuit', ...TB],
+      rows: S.filter(s => s.tb).map(s => [s.name, s.circuit, ...s.tb]),
+    },
+    {
+      id: 'ict',
+      title: 'ICT Readiness Report',
+      cols: [
+        'School',
+        'Circuit',
+        'Computer lab',
+        'Computers',
+        'Pupils per computer',
+        'Internet',
+        'Provider',
+        'Electricity',
+        'Projector',
+        'Television',
+      ],
+      rows: S.map(s => [
+        s.name,
+        s.circuit,
+        f(s, 'lab'),
+        s.fac ? s.fac.pc || 0 : 'n/a',
+        s.fac && s.fac.pc ? (pupils(s) / s.fac.pc).toFixed(1) : '-',
+        f(s, 'net'),
+        s.fac ? s.fac.prov || '-' : 'n/a',
+        f(s, 'elec'),
+        f(s, 'proj'),
+        f(s, 'tv'),
+      ]),
+    },
+  ];
 }
 
 interface EdmsModuleProps {
@@ -66,52 +797,49 @@ interface EdmsModuleProps {
   onBackToAdmin?: () => void;
 }
 
-const normalizeKey = (str: string) =>
-  String(str || '')
-    .trim()
-    .toUpperCase()
-    .replace(/\s+/g, ' ');
-
 export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: EdmsModuleProps) {
-  const [page, setPage] = useState<'dash' | 'schools' | 'enrol' | 'staff' | 'fac' | 'books' | 'rep'>('dash');
-  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
-  const [q, setQ] = useState('');
-  const [cir, setCir] = useState('All');
-  const [selectedSchoolId, setSelectedSchoolId] = useState<string>('');
+  const [tab, setTab] = useState<
+    'dashboard' | 'schools' | 'enrolment' | 'staffing' | 'facilities' | 'textbooks' | 'reports' | 'import'
+  >('dashboard');
+  const [isDark, setIsDark] = useState(true);
+  const [target, setTarget] = useState(35);
   const [toastMsg, setToastMsg] = useState('');
-  const [expandedSchoolStaff, setExpandedSchoolStaff] = useState<string | null>(null);
 
-  // Registration form states
+  // Schools tab state
+  const [q, setQ] = useState('');
+  const [cirFilter, setCirFilter] = useState('All');
+  const [openSchoolKey, setOpenSchoolKey] = useState('');
+  const [showRegisterForm, setShowRegisterForm] = useState(false);
   const [newName, setNewName] = useState('');
   const [newCode, setNewCode] = useState('');
-  const [newOwn, setNewOwn] = useState('Public');
+  const [newOwn, setNewOwn] = useState('PUBLIC');
   const [newCir, setNewCir] = useState(DEFAULT_CIRCUITS[0]);
   const [newHead, setNewHead] = useState('');
 
-  // Optimistic local overrides so typing in number inputs or checkboxes is instant
-  const [localOverrides, setLocalOverrides] = useState<Record<string, Partial<EdmsSchool>>>({});
+  // Interactive School Editor Selection (for Enrolment, Facilities, Textbooks)
+  const [selectedSchoolId, setSelectedSchoolId] = useState<string>('');
+  const [showInteractiveEditor, setShowInteractiveEditor] = useState(false);
+  const [localOverrides, setLocalOverrides] = useState<Record<string, any>>({});
 
-  // Import Workbook States
+  // Reports tab state
+  const [reportId, setReportId] = useState('census');
+
+  // Import tab state
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [importing, setImporting] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [importMsg, setImportMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
   const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge');
-  const [importSummary, setImportSummary] = useState<{
-    schoolsAdded: number;
-    schoolsUpdated: number;
-    DuplicatesSkippedOrMerged: number;
-    teachersAdded: number;
-    teachersUpdated: number;
-  } | null>(null);
 
-  const showToast = (msg: string) => {
-    setToastMsg(msg);
+  const showToast = (m: string) => {
+    setToastMsg(m);
     setTimeout(() => {
-      setToastMsg(prev => (prev === msg ? '' : prev));
-    }, 2600);
+      setToastMsg(prev => (prev === m ? '' : prev));
+    }, 3000);
   };
 
-  // Filter out empty drafts from submissions
+  // Filter out empty drafts from live portal submissions
   const validSubmissions = useMemo(() => {
     return submissions.filter((sub: any) => {
       const isDraft = sub.status === 'draft' && (!sub.documents || sub.documents.length === 0);
@@ -119,1933 +847,1839 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
     });
   }, [submissions]);
 
-  // Group submitted teachers by normalized school name
-  const teachersBySchool = useMemo(() => {
-    const map: Record<string, any[]> = {};
-    // Build a Set of seen staffIds per school to prevent duplicate submissions from inflating counts
-    const seenStaffBySchool: Record<string, Set<string>> = {};
+  // Group submitted portal teachers by normalized school name (deduplicated by staffId)
+  const portalTeachersBySchool = useMemo(() => {
+    const map = new Map<string, any[]>();
+    const seenStaff = new Map<string, Set<string>>();
 
     validSubmissions.forEach((sub: any) => {
       if (!sub.school || sub.category === 'Education Office') return;
-      const sKey = normalizeKey(sub.school);
-      const staffKey = sub.staffId ? normalizeKey(sub.staffId) : sub.id;
+      const k = norm(sub.school);
+      if (!k) return;
+      const staffKey = sub.staffId ? norm(sub.staffId) : sub.id;
 
-      if (!map[sKey]) {
-        map[sKey] = [];
-        seenStaffBySchool[sKey] = new Set();
+      if (!map.has(k)) {
+        map.set(k, []);
+        seenStaff.set(k, new Set());
       }
-
-      if (!seenStaffBySchool[sKey].has(staffKey)) {
-        seenStaffBySchool[sKey].add(staffKey);
-        map[sKey].push(sub);
+      if (!seenStaff.get(k)!.has(staffKey)) {
+        seenStaff.get(k)!.add(staffKey);
+        map.get(k)!.push(sub);
       }
     });
     return map;
   }, [validSubmissions]);
 
-  // Combine Firestore schoolsData + any schools referenced in submissions (deduplicated)
-  const S: EdmsSchool[] = useMemo(() => {
+  // Compute unified `schools` array combining Firestore `schools` + live portal `submissions`
+  const schools = useMemo(() => {
     const schoolMap = new Map<string, any>();
 
-    // 1. Add all Firestore schools (deduplicating by normalized school name or EMIS code)
+    // 1. Add all Firestore `schools` documents (deduplicating by normalized school name)
     schoolsData.forEach((raw: any) => {
-      const nameKey = normalizeKey(raw.school || raw.name || '');
-      if (!nameKey) return;
-      const existing = schoolMap.get(nameKey);
+      const rawName = txt(raw.name || raw.school);
+      const k = norm(rawName);
+      if (!k) return;
+      const existing = schoolMap.get(k);
       if (!existing || (raw.enr && !existing.enr)) {
-        schoolMap.set(nameKey, raw);
+        schoolMap.set(k, raw);
       }
     });
 
-    // 2. Discover any school present in valid teacher submissions that isn't in `schools` collection yet
+    // 2. Auto-discover any school referenced in teacher portal submissions
     validSubmissions.forEach((sub: any) => {
       if (!sub.school || sub.category === 'Education Office') return;
-      const nameKey = normalizeKey(sub.school);
-      if (!schoolMap.has(nameKey)) {
-        schoolMap.set(nameKey, {
-          id: `virtual_${nameKey}`,
-          school: sub.school,
-          circuit: sub.circuit || 'UNASSIGNED',
-          cat: sub.category === 'SENIOR HIGH SCHOOL' ? 'Senior High' : 'Basic',
+      const k = norm(sub.school);
+      if (!k) return;
+      if (!schoolMap.has(k)) {
+        schoolMap.set(k, {
+          id: `virtual_${k}`,
+          name: txt(sub.school).toUpperCase(),
+          school: txt(sub.school).toUpperCase(),
+          circuit: txt(sub.circuit || 'UNASSIGNED').toUpperCase(),
+          type: 'PUBLIC',
+          levels: sub.category === 'SENIOR HIGH SCHOOL' ? 'SHS' : 'KG, PRY & JHS',
         });
       }
     });
 
-    const list = Array.from(schoolMap.values()).sort((a, b) =>
-      String(a.school || a.name || '').localeCompare(String(b.school || b.name || ''))
+    const sortedRaw = Array.from(schoolMap.values()).sort((a, b) =>
+      txt(a.name || a.school).localeCompare(txt(b.name || b.school))
     );
 
-    return list.map((raw, idx) => {
-      const name = String(raw.school || raw.name || `School ${idx + 1}`);
-      const nameKey = normalizeKey(name);
+    return sortedRaw.map((raw, idx) => {
       const id = String(raw.id || `sch_${idx + 1}`);
       const override = localOverrides[id] || {};
+      const merged = { ...raw, ...override };
 
-      const matchedTeachers = teachersBySchool[nameKey] || [];
-      const portalTeachersCount = matchedTeachers.length;
-      const portalQualifiedCount = matchedTeachers.filter((t: any) => {
-        const hasProfArray =
-          Array.isArray(t.professional) &&
-          t.professional.some((p: any) => p && (p.course || p.institution || p.award));
-        const hasLicense = Boolean(t.teachersLicence && String(t.teachersLicence).trim() !== '');
-        const isRankedTeacher = Boolean(t.currentRank && t.currentRank !== 'Pupil Teacher');
-        return hasProfArray || hasLicense || isRankedTeacher;
-      }).length;
+      const name = txt(merged.name || merged.school || `School ${idx + 1}`);
+      const k = norm(name);
+      const emis = txt(merged.emis || merged.code || `TM-${1000 + idx * 7}`);
+      const circuit = txt(merged.circuit || 'ASHAMANG').toUpperCase();
+      const type = txt(merged.type || merged.own || 'PUBLIC').toUpperCase();
 
-      // Default enrolment structure
-      const defaultEnr: Record<string, [number, number]> = {};
-      LV.forEach(([k]) => {
-        const savedLevel = raw.enr?.[k];
-        defaultEnr[k] = Array.isArray(savedLevel)
-          ? [Number(savedLevel[0]) || 0, Number(savedLevel[1]) || 0]
-          : [0, 0];
-      });
-      const enr = override.enr || defaultEnr;
+      // Build `tq` from live portal submissions for this school
+      const matchedSubs = portalTeachersBySchool.get(k) || [];
+      const portalTq = {
+        n: 0,
+        M: 0,
+        F: 0,
+        age: [0, 0, 0, 0, 0, 0],
+        svc: [0, 0, 0, 0],
+        rank: {} as Record<string, number>,
+        prof: {} as Record<string, number>,
+        sub: {} as Record<string, number>,
+      };
+      let portalTrainedCount = 0;
 
-      const totalLearners = Object.values(enr)
-        .flat()
-        .reduce((a, b) => a + b, 0);
+      matchedSubs.forEach((sub: any) => {
+        portalTq.n++;
+        const sex = txt(sub.sex).toUpperCase();
+        if (sex.startsWith('M')) portalTq.M++;
+        else if (sex.startsWith('F')) portalTq.F++;
 
-      // Default facilities
-      const defaultFac: Record<string, boolean> = {};
-      FAC.forEach(f => {
-        defaultFac[f] = Boolean(raw.fac?.[f]);
-      });
-      const fac = override.fac || defaultFac;
-
-      // Default books
-      const defaultBooks: Record<string, [number, number]> = {};
-      SUBJ.forEach(s => {
-        const savedBook = raw.books?.[s];
-        const autoReq = Math.round(totalLearners * 0.9);
-        if (Array.isArray(savedBook)) {
-          const reqVal = Number(savedBook[0]) > 0 ? Number(savedBook[0]) : autoReq;
-          defaultBooks[s] = [reqVal, Number(savedBook[1]) || 0];
-        } else {
-          defaultBooks[s] = [autoReq, 0];
+        const by = yr(sub.dob);
+        if (by) {
+          const g = NOW - by;
+          portalTq.age[g < 30 ? 0 : g < 40 ? 1 : g < 50 ? 2 : g < 55 ? 3 : g < 60 ? 4 : 5]++;
         }
+
+        const fy = yr(sub.dateFirstAppointment);
+        if (fy) {
+          const v = NOW - fy;
+          portalTq.svc[v < 5 ? 0 : v < 15 ? 1 : v < 25 ? 2 : 3]++;
+        }
+
+        const rnk = txt(sub.currentRank).toUpperCase() || 'UNSPECIFIED';
+        inc(portalTq.rank, rnk);
+
+        // Extract highest professional qualification
+        let profLabel = 'UNSPECIFIED';
+        if (Array.isArray(sub.professional) && sub.professional.length > 0) {
+          const firstValid = sub.professional.find((p: any) => p && (p.course || p.award || p.institution));
+          if (firstValid) {
+            profLabel = txt(firstValid.course || firstValid.award || 'DEGREE').toUpperCase();
+            portalTrainedCount++;
+          }
+        } else if (sub.teachersLicence || (rnk && rnk !== 'PUPIL TEACHER' && rnk !== 'UNSPECIFIED')) {
+          profLabel = 'PROFESSIONAL CERT';
+          portalTrainedCount++;
+        }
+        inc(portalTq.prof, profLabel);
+
+        const subj = txt(sub.subject || sub.areaOfSpecialization || 'GENERAL').toUpperCase();
+        inc(portalTq.sub, subj);
       });
-      const books = override.books || defaultBooks;
 
-      // Teachers: combine portal submitted teachers or imported/manual establishment count if higher
-      const savedHave = Array.isArray(raw.teachers) ? Number(raw.teachers[0]) || 0 : 0;
-      const savedQual = Array.isArray(raw.teachers) ? Number(raw.teachers[1]) || 0 : 0;
+      // Use imported `tq` if it has more records, otherwise use live `portalTq`
+      const finalTq =
+        merged.tq && merged.tq.n && merged.tq.n >= portalTq.n
+          ? merged.tq
+          : portalTq.n > 0
+          ? portalTq
+          : merged.tq || portalTq;
 
-      const finalHave =
-        override.teachers?.[0] !== undefined
-          ? override.teachers[0]
-          : Math.max(portalTeachersCount, savedHave);
-      const finalQual =
-        override.teachers?.[1] !== undefined
-          ? override.teachers[1]
-          : Math.max(portalQualifiedCount, savedQual);
+      // Enrolment array `[kgB, kgG, priB, priG, jhsB, jhsG]`
+      let enrArr: number[] = [0, 0, 0, 0, 0, 0];
+      if (Array.isArray(merged.enr) && merged.enr.length === 6) {
+        enrArr = merged.enr.map(num);
+      } else if (merged.enr && typeof merged.enr === 'object' && !Array.isArray(merged.enr)) {
+        enrArr = [
+          num(merged.enr.KG?.[0]),
+          num(merged.enr.KG?.[1]),
+          num(merged.enr.PRI?.[0]),
+          num(merged.enr.PRI?.[1]),
+          num(merged.enr.JHS?.[0]),
+          num(merged.enr.JHS?.[1]),
+        ];
+      }
+
+      // 22-element class array `cl` (KG1 B/G, KG2 B/G, P1..P6 B/G, JH1..JH3 B/G)
+      let clArr: number[] = Array(22).fill(0);
+      if (Array.isArray(merged.cl) && merged.cl.length === 22) {
+        clArr = merged.cl.map(num);
+      } else if (sum(enrArr) > 0) {
+        // Distribute level totals evenly across classes if only level totals were entered
+        clArr[0] = Math.floor(enrArr[0] / 2);
+        clArr[1] = Math.floor(enrArr[1] / 2);
+        clArr[2] = enrArr[0] - clArr[0];
+        clArr[3] = enrArr[1] - clArr[1];
+        for (let p = 0; p < 6; p++) {
+          clArr[4 + p * 2] = Math.floor(enrArr[2] / 6) + (p === 0 ? enrArr[2] % 6 : 0);
+          clArr[5 + p * 2] = Math.floor(enrArr[3] / 6) + (p === 0 ? enrArr[3] % 6 : 0);
+        }
+        for (let j = 0; j < 3; j++) {
+          clArr[16 + j * 2] = Math.floor(enrArr[4] / 3) + (j === 0 ? enrArr[4] % 3 : 0);
+          clArr[17 + j * 2] = Math.floor(enrArr[5] / 3) + (j === 0 ? enrArr[5] % 3 : 0);
+        }
+      }
+
+      const rcArr: number[] =
+        Array.isArray(merged.rc) && merged.rc.length === 11
+          ? merged.rc.map(num)
+          : sum(enrArr) > 0
+          ? [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+          : Array(11).fill(0);
+
+      const roomsCount = num(merged.rooms) || sum(rcArr);
+
+      // Teachers `[kgTch, priTch, jhsTch]`
+      let tchArr: number[] = [0, 0, 0];
+      if (Array.isArray(merged.tch) && merged.tch.length === 3 && sum(merged.tch) >= portalTq.n) {
+        tchArr = merged.tch.map(num);
+      } else if (Array.isArray(merged.teachers) && num(merged.teachers[0]) > portalTq.n) {
+        tchArr = [0, num(merged.teachers[0]), 0];
+      } else {
+        tchArr = [0, portalTq.n, 0];
+      }
+
+      let trnArr: number[] = [0, 0, 0];
+      if (Array.isArray(merged.trn) && merged.trn.length === 3 && sum(merged.trn) >= portalTrainedCount) {
+        trnArr = merged.trn.map(num);
+      } else {
+        trnArr = [0, Math.max(portalTrainedCount, num(merged.teachers?.[1])), 0];
+      }
+
+      // Normalize facilities object
+      let facObj: any = null;
+      if (merged.fac && typeof merged.fac === 'object') {
+        if ('lab' in merged.fac || 'elec' in merged.fac || 'toilet' in merged.fac) {
+          facObj = merged.fac;
+        } else {
+          // Convert legacy facility keys if present
+          facObj = {
+            lab: Boolean(merged.fac['ICT lab']),
+            sci: Boolean(merged.fac['Science lab']),
+            elec: Boolean(merged.fac['Electricity']),
+            net: Boolean(merged.fac['Internet']),
+            water: Boolean(merged.fac['Borehole / water']),
+            toilet: Boolean(merged.fac['Toilets (gender-separated)']),
+            field: Boolean(merged.fac['Sports field']),
+            scr: Boolean(merged.fac['Library']),
+            pc: num(merged.fac.pc),
+            tM: num(merged.fac.tM),
+            tF: num(merged.fac.tF),
+            cond: merged.fac.cond || ['GOOD', 'GOOD', 'GOOD', 'GOOD', 'GOOD'],
+          };
+        }
+      }
+
+      // Normalize textbooks `tb` array (12 subjects: ADEQUATE / INADEQUATE / NOT AVAILABLE)
+      let tbArr: string[] | null = null;
+      if (Array.isArray(merged.tb) && merged.tb.length === TB.length) {
+        tbArr = merged.tb;
+      } else if (merged.books && typeof merged.books === 'object') {
+        tbArr = TB.map(subj => {
+          const bPair = merged.books[subj] || merged.books[subj === 'Maths' ? 'Mathematics' : subj];
+          if (!Array.isArray(bPair)) return 'INADEQUATE';
+          const [reqB, availB] = bPair;
+          if (!availB || availB <= 0) return 'NOT AVAILABLE';
+          return availB >= reqB * 0.8 ? 'ADEQUATE' : 'INADEQUATE';
+        });
+      }
 
       return {
         id,
         firestoreId: String(raw.id || '').startsWith('virtual_') ? undefined : raw.id,
+        emis,
         name,
-        code: override.code ?? raw.code ?? `TM-${String(1000 + idx * 7)}`,
-        cat: raw.cat || 'Basic',
-        own: override.own ?? raw.own ?? (name.includes('PRESBY') || name.includes('METHODIST') || name.includes('CATHOLIC') || name.includes('ISLAMIC') || name.includes('ANGLICAN') ? 'Mission' : 'Public'),
-        circuit: override.circuit ?? raw.circuit ?? 'ASHAMANG',
-        head: override.head ?? raw.head ?? 'Assigned Head',
-        status: override.status ?? raw.status ?? 'Verified',
-        enr,
-        teachers: [finalHave, Math.min(finalHave, finalQual)],
-        portalTeachersCount,
-        portalQualifiedCount,
-        fac,
-        books,
-        gps: raw.gps || '',
+        district: txt(merged.district || 'TEMA METRO'),
+        circuit,
+        head: txt(merged.head || 'Not assigned'),
+        levels: txt(merged.levels || 'KG, PRY & JHS'),
+        type,
+        mgmt: txt(merged.mgmt || 'MA/DA'),
+        phone: txt(merged.phone || ''),
+        email: txt(merged.email || ''),
+        status: txt(merged.status || 'Verified'),
+        deprived: Boolean(merged.deprived),
+        enr: enrArr,
+        cl: clArr,
+        rc: rcArr,
+        tch: tchArr,
+        trn: trnArr,
+        nts: num(merged.nts),
+        rooms: roomsCount,
+        fac: facObj,
+        tb: tbArr,
+        rec: merged.rec || null,
+        lang: merged.lang || null,
+        tq: finalTq,
+        portalTeachers: matchedSubs,
       };
     });
-  }, [schoolsData, validSubmissions, teachersBySchool, localOverrides]);
+  }, [schoolsData, validSubmissions, portalTeachersBySchool, localOverrides]);
 
-  // All circuits dynamically
-  const CIR = useMemo(() => {
+  const activeSchool = useMemo(() => {
+    if (!schools.length) return null;
+    return schools.find(s => s.id === selectedSchoolId) || schools[0];
+  }, [schools, selectedSchoolId]);
+
+  const allCircuits = useMemo(() => {
     const set = new Set<string>(DEFAULT_CIRCUITS);
-    S.forEach(s => {
+    schools.forEach(s => {
       if (s.circuit) set.add(s.circuit);
     });
     return Array.from(set).sort();
-  }, [S]);
+  }, [schools]);
 
-  const activeSchool = useMemo(() => {
-    if (!S.length) return null;
-    return S.find(x => x.id === selectedSchoolId) || S[0];
-  }, [S, selectedSchoolId]);
-
-  // Helper calculations matching the EDMS script
-  const sum = (a: number[]) => a.reduce((x, y) => x + y, 0);
-  const boys = (s: EdmsSchool) => sum(Object.values(s.enr).map(v => v[0]));
-  const girls = (s: EdmsSchool) => sum(Object.values(s.enr).map(v => v[1]));
-  const tot = (s: EdmsSchool) => boys(s) + girls(s);
-  const req = (s: EdmsSchool) => Math.max(1, Math.ceil(tot(s) / 35));
-  const gap = (s: EdmsSchool) => req(s) - s.teachers[0];
-  const fscore = (s: EdmsSchool) => Math.round((FAC.filter(f => s.fac[f]).length / FAC.length) * 100);
-  const bratio = (s: EdmsSchool) => {
-    const r = sum(SUBJ.map(k => s.books[k][0]));
-    if (!r) return 0;
-    const a = sum(SUBJ.map(k => Math.min(s.books[k][1], s.books[k][0])));
-    return a / r;
-  };
-  const f1 = (n: number) => Number(n || 0).toLocaleString('en-GB');
-
-  // Persist updates to Firestore `schools` document (or create if virtual)
-  const saveSchoolPatch = async (school: EdmsSchool, patch: Partial<EdmsSchool>) => {
+  // Save a patch to a single school in Firestore
+  const saveSchoolPatch = async (school: any, patch: Record<string, any>) => {
     setLocalOverrides(prev => ({
       ...prev,
       [school.id]: { ...(prev[school.id] || {}), ...patch },
     }));
-
     try {
-      const firestorePayload: Record<string, any> = {
+      const payload = {
         ...patch,
+        name: school.name,
         school: school.name,
         circuit: patch.circuit || school.circuit,
         updatedAt: serverTimestamp(),
       };
       if (school.firestoreId) {
-        await updateDoc(doc(db, 'schools', school.firestoreId), firestorePayload);
+        await updateDoc(doc(db, 'schools', school.firestoreId), payload);
       } else {
         await addDoc(collection(db, 'schools'), {
-          school: school.name,
-          circuit: school.circuit,
-          code: school.code,
-          own: school.own,
+          emis: school.emis,
+          type: school.type,
+          levels: school.levels,
           head: school.head,
-          status: school.status,
           enr: school.enr,
-          teachers: school.teachers,
+          cl: school.cl,
+          rc: school.rc,
+          tch: school.tch,
+          trn: school.trn,
+          rooms: school.rooms,
           fac: school.fac,
-          books: school.books,
-          ...firestorePayload,
+          tb: school.tb,
+          ...payload,
         });
       }
-    } catch (err) {
-      console.error('Error saving EDMS school patch:', err);
+    } catch (e) {
+      console.error('Error saving school patch:', e);
       showToast('Failed to sync change to cloud');
     }
   };
 
-  // Register a new school with Duplicate Check
-  const handleAddSchool = async () => {
+  // Register a new school with duplicate check
+  const handleRegisterSchool = async () => {
     const n = newName.trim().toUpperCase();
     const c = newCode.trim().toUpperCase();
     if (!n || !c) {
-      showToast('Enter a school name and EMIS code');
+      showToast('Enter both School Name and EMIS Code');
       return;
     }
-
-    // Duplicate check by school name or EMIS code
-    const duplicate = S.find(
-      s => normalizeKey(s.name) === normalizeKey(n) || normalizeKey(s.code) === normalizeKey(c)
-    );
-    if (duplicate) {
-      showToast(`Duplicate blocked: "${duplicate.name}" (${duplicate.code}) already exists!`);
+    const dup = schools.find(s => norm(s.name) === norm(n) || norm(s.emis) === norm(c));
+    if (dup) {
+      showToast(`Duplicate blocked: ${dup.name} (${dup.emis}) already exists!`);
       return;
     }
-
-    const enr: Record<string, [number, number]> = {};
-    LV.forEach(([k]) => (enr[k] = [0, 0]));
-    const fac: Record<string, boolean> = {};
-    FAC.forEach(f => (fac[f] = false));
-    const books: Record<string, [number, number]> = {};
-    SUBJ.forEach(s => (books[s] = [0, 0]));
-
     try {
       await addDoc(collection(db, 'schools'), {
-        school: n,
+        emis: c,
         code: c,
-        cat: 'Basic',
-        own: newOwn,
+        name: n,
+        school: n,
+        district: 'TEMA METRO',
         circuit: newCir,
         head: newHead.trim() || 'Not assigned',
-        status: 'Pending verification',
-        enr,
-        teachers: [0, 0],
-        fac,
-        books,
+        type: newOwn,
+        levels: 'KG, PRY & JHS',
+        mgmt: 'MA/DA',
+        enr: [0, 0, 0, 0, 0, 0],
+        cl: Array(22).fill(0),
+        rc: Array(11).fill(0),
+        tch: [0, 0, 0],
+        trn: [0, 0, 0],
+        nts: 0,
+        rooms: 0,
         createdAt: serverTimestamp(),
       });
       setNewName('');
       setNewCode('');
       setNewHead('');
-      showToast('School registered');
+      setShowRegisterForm(false);
+      showToast('School registered successfully');
     } catch (e) {
       console.error(e);
       showToast('Error registering school');
     }
   };
 
-  const handleVerify = (school: EdmsSchool) => {
-    saveSchoolPatch(school, { status: 'Verified' });
-    showToast('School verified');
-  };
-
-  const handleSetEnrol = (school: EdmsSchool, levelKey: string, genderIdx: 0 | 1, val: string) => {
-    const num = Math.max(0, parseInt(val, 10) || 0);
-    const nextEnr: Record<string, [number, number]> = { ...school.enr };
-    const pair: [number, number] = [...(nextEnr[levelKey] || [0, 0])] as [number, number];
-    pair[genderIdx] = num;
-    nextEnr[levelKey] = pair;
-
-    // Also update required books based on new learner total if required was 0
-    const newTotal = Object.values(nextEnr)
-      .flat()
-      .reduce((a, b) => a + b, 0);
-    const nextBooks: Record<string, [number, number]> = { ...school.books };
-    SUBJ.forEach(sub => {
-      nextBooks[sub] = [Math.round(newTotal * 0.9), nextBooks[sub]?.[1] || 0];
-    });
-
-    saveSchoolPatch(school, { enr: nextEnr, books: nextBooks });
-  };
-
-  const handleSetFacility = (school: EdmsSchool, facName: string, checked: boolean) => {
-    const nextFac = { ...school.fac, [facName]: checked };
-    saveSchoolPatch(school, { fac: nextFac });
-  };
-
-  const handleSetBooks = (school: EdmsSchool, subjName: string, typeIdx: 0 | 1, val: string) => {
-    const num = Math.max(0, parseInt(val, 10) || 0);
-    const nextBooks = { ...school.books };
-    const pair: [number, number] = [...(nextBooks[subjName] || [0, 0])] as [number, number];
-    pair[typeIdx] = num;
-    nextBooks[subjName] = pair;
-    saveSchoolPatch(school, { books: nextBooks });
-  };
-
-  // Export Census as CSV or Multi-sheet Excel Workbook (.xlsx)
-  const buildCsvString = () => {
-    const h = [
-      'School',
-      'EMIS',
-      'Circuit',
-      'Ownership',
-      'Head teacher',
-      'Status',
-      'KG Boys',
-      'KG Girls',
-      'PRI Boys',
-      'PRI Girls',
-      'JHS Boys',
-      'JHS Girls',
-      'Boys',
-      'Girls',
-      'Teachers',
-      'Qualified teachers',
-      'Required teachers',
-      'Facility score %',
-      'Textbook coverage %',
-    ];
-    const rows = S.map(s => [
-      s.name,
-      s.code,
-      s.circuit,
-      s.own,
-      s.head,
-      s.status,
-      s.enr.KG?.[0] || 0,
-      s.enr.KG?.[1] || 0,
-      s.enr.PRI?.[0] || 0,
-      s.enr.PRI?.[1] || 0,
-      s.enr.JHS?.[0] || 0,
-      s.enr.JHS?.[1] || 0,
-      boys(s),
-      girls(s),
-      s.teachers[0],
-      s.teachers[1],
-      req(s),
-      fscore(s),
-      Math.round(bratio(s) * 100),
-    ]);
-    return [h, ...rows].map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n');
-  };
-
-  const handleCopyCsv = () => {
-    try {
-      navigator.clipboard.writeText(buildCsvString()).then(
-        () => showToast('Census copied as CSV'),
-        () => showToast('Copy blocked. Use Download Workbook instead.')
-      );
-    } catch {
-      showToast('Copy blocked. Use Download Workbook instead.');
-    }
-  };
-
-  const handleExportWorkbook = () => {
-    const wb = XLSX.utils.book_new();
-
-    // Sheet 1: Basic Info
-    const basicRows = S.map(s => ({
-      School: s.name,
-      EMIS: s.code,
-      Circuit: s.circuit,
-      Ownership: s.own,
-      Category: s.cat,
-      'Head teacher': s.head,
-      Status: s.status,
-    }));
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(basicRows), 'Basic Info');
-
-    // Sheet 2: Enrolment
-    const enrolRows = S.map(s => ({
-      School: s.name,
-      EMIS: s.code,
-      'KG Boys': s.enr.KG?.[0] || 0,
-      'KG Girls': s.enr.KG?.[1] || 0,
-      'PRI Boys': s.enr.PRI?.[0] || 0,
-      'PRI Girls': s.enr.PRI?.[1] || 0,
-      'JHS Boys': s.enr.JHS?.[0] || 0,
-      'JHS Girls': s.enr.JHS?.[1] || 0,
-      'Total Boys': boys(s),
-      'Total Girls': girls(s),
-      Total: tot(s),
-    }));
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(enrolRows), 'Enrolment');
-
-    // Sheet 3: Teaching Staff
-    const staffRows = S.map(s => ({
-      School: s.name,
-      EMIS: s.code,
-      Teachers: s.teachers[0],
-      'Professionally qualified': s.teachers[1],
-      'Portal Submitted Teachers': s.portalTeachersCount,
-      Required: req(s),
-      Gap: gap(s),
-    }));
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(staffRows), 'Teaching Staff');
-
-    // Sheet 4: Facilities
-    const facRows = S.map(s => {
-      const row: Record<string, any> = { School: s.name, EMIS: s.code };
-      FAC.forEach(f => {
-        row[f] = s.fac[f] ? 'Yes' : 'No';
-      });
-      return row;
-    });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(facRows), 'Facilities');
-
-    // Sheet 5: Books Records
-    const bookRows = S.map(s => {
-      const row: Record<string, any> = { School: s.name, EMIS: s.code };
-      SUBJ.forEach(sub => {
-        row[`${sub} Required`] = s.books[sub]?.[0] || 0;
-        row[`${sub} Available`] = s.books[sub]?.[1] || 0;
-      });
-      return row;
-    });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(bookRows), 'Books Records');
-
-    XLSX.writeFile(wb, `Tema_Metro_EDMS_Census_${new Date().toISOString().slice(0, 10)}.xlsx`);
-    showToast('Census workbook (.xlsx) downloaded');
-  };
-
-  // ── IMPORT WORKBOOK (.xlsx / .csv) WITH DUPLICATE CHECK & SMART MERGE ──
-  const handleImportWorkbook = async () => {
-    if (!selectedFile) {
-      showToast('Please choose an .xlsx or .csv file first');
-      return;
+  // Save bulk schools to Firestore with duplicate checking
+  const saveBulkSchoolsToFirestore = async (
+    incomingSchools: any[],
+    mode: 'merge' | 'replace',
+    onProgress?: (msg: string) => void
+  ) => {
+    if (mode === 'replace') {
+      onProgress?.('Clearing existing school census data...');
+      const delPromises = schoolsData.map((s: any) => deleteDoc(doc(db, 'schools', s.id)));
+      await Promise.all(delPromises);
     }
 
-    setImporting(true);
-    setImportSummary(null);
+    // Build lookup map of existing Firestore schools by normalized name and EMIS
+    const existingByName = new Map<string, any>();
+    const existingByEmis = new Map<string, any>();
+    if (mode === 'merge') {
+      schoolsData.forEach((raw: any) => {
+        const k = norm(raw.name || raw.school);
+        if (k) existingByName.set(k, raw);
+        const eKey = norm(raw.emis || raw.code);
+        if (eKey) existingByEmis.set(eKey, raw);
+      });
+    }
 
-    try {
-      const ext = selectedFile.name.split('.').pop()?.toLowerCase();
-      let sheetsData: Record<string, any[]> = {};
-
-      if (ext === 'csv') {
-        const text = await selectedFile.text();
-        const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
-        sheetsData['SingleSheet'] = parsed.data as any[];
+    // Deduplicate within the incoming array itself
+    const dedupedMap = new Map<string, any>();
+    let inFileDuplicates = 0;
+    incomingSchools.forEach(s => {
+      const k = norm(s.name || s.school);
+      if (!k) return;
+      if (dedupedMap.has(k)) {
+        inFileDuplicates++;
+        dedupedMap.set(k, { ...dedupedMap.get(k), ...s });
       } else {
-        const buffer = await selectedFile.arrayBuffer();
-        const wb = XLSX.read(buffer, { type: 'array' });
-        wb.SheetNames.forEach(name => {
-          sheetsData[name] = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '' });
-        });
+        dedupedMap.set(k, s);
       }
+    });
 
-      // Build lookup maps for existing Firestore schools (by normalized Name and by normalized EMIS code)
-      const existingByName = new Map<string, EdmsSchool>();
-      const existingByCode = new Map<string, EdmsSchool>();
-      S.forEach(s => {
-        existingByName.set(normalizeKey(s.name), s);
-        if (s.code) existingByCode.set(normalizeKey(s.code), s);
-      });
+    const uniqueIncoming = Array.from(dedupedMap.values());
+    let addedCount = 0;
+    let updatedCount = 0;
 
-      // Accumulate merged school records keyed by normalized school name
-      const stagedSchools = new Map<
-        string,
-        {
-          existing?: EdmsSchool;
-          school: string;
-          code?: string;
-          circuit?: string;
-          own?: string;
-          cat?: string;
-          head?: string;
-          status?: string;
-          enr?: Record<string, [number, number]>;
-          teachers?: [number, number];
-          fac?: Record<string, boolean>;
-          books?: Record<string, [number, number]>;
-        }
-      >();
+    for (let i = 0; i < uniqueIncoming.length; i += 40) {
+      const chunk = uniqueIncoming.slice(i, i + 40);
+      await Promise.all(
+        chunk.map(s => {
+          const k = norm(s.name || s.school);
+          const eKey = norm(s.emis || s.code);
+          const matched = mode === 'merge' ? existingByName.get(k) || (eKey ? existingByEmis.get(eKey) : null) : null;
 
-      // Also support importing external Teacher rows if the sheet contains Staff ID / Teacher Name
-      const stagedTeachers: any[] = [];
-      let duplicatesMergedCount = 0;
+          const payload = {
+            ...s,
+            name: txt(s.name || s.school).toUpperCase(),
+            school: txt(s.name || s.school).toUpperCase(),
+            emis: txt(s.emis || s.code),
+            code: txt(s.emis || s.code),
+            circuit: txt(s.circuit || 'ASHAMANG').toUpperCase(),
+            updatedAt: serverTimestamp(),
+          };
 
-      const getOrInitStage = (rawName: string, rawCode?: string) => {
-        const normName = normalizeKey(rawName);
-        const normCode = rawCode ? normalizeKey(rawCode) : '';
-
-        // Check if already staged in this import file (deduplicates within the uploaded file itself!)
-        if (stagedSchools.has(normName)) {
-          duplicatesMergedCount++;
-          return stagedSchools.get(normName)!;
-        }
-
-        const matchedExisting =
-          existingByName.get(normName) || (normCode ? existingByCode.get(normCode) : undefined);
-
-        const canonicalKey = matchedExisting ? normalizeKey(matchedExisting.name) : normName;
-        if (stagedSchools.has(canonicalKey)) {
-          duplicatesMergedCount++;
-          return stagedSchools.get(canonicalKey)!;
-        }
-
-        const item = {
-          existing: matchedExisting,
-          school: matchedExisting ? matchedExisting.name : rawName.trim().toUpperCase(),
-          code: rawCode ? String(rawCode).trim().toUpperCase() : matchedExisting?.code,
-          circuit: matchedExisting?.circuit || 'ASHAMANG',
-          own: matchedExisting?.own || 'Public',
-          cat: matchedExisting?.cat || 'Basic',
-          head: matchedExisting?.head || 'Assigned Head',
-          status: matchedExisting?.status || 'Verified',
-          enr: matchedExisting ? { ...matchedExisting.enr } : undefined,
-          teachers: matchedExisting ? ([...matchedExisting.teachers] as [number, number]) : undefined,
-          fac: matchedExisting ? { ...matchedExisting.fac } : undefined,
-          books: matchedExisting ? { ...matchedExisting.books } : undefined,
-        };
-        stagedSchools.set(canonicalKey, item);
-        return item;
-      };
-
-      // Helper to read case-insensitive keys from a row
-      const getVal = (row: any, candidates: string[]) => {
-        const keys = Object.keys(row);
-        for (const cand of candidates) {
-          const found = keys.find(k => normalizeKey(k) === normalizeKey(cand));
-          if (found !== undefined && row[found] !== '' && row[found] !== null && row[found] !== undefined) {
-            return row[found];
-          }
-        }
-        return undefined;
-      };
-
-      // Process every sheet in the workbook
-      for (const [sheetName, rows] of Object.entries(sheetsData)) {
-        const normSheet = normalizeKey(sheetName);
-
-        for (const row of rows) {
-          // Check if this is a Teacher submission record row
-          const staffIdVal = getVal(row, ['Staff ID', 'staffId', 'Staff_ID', 'Employee ID']);
-          const teacherNameVal = getVal(row, ['Teacher Name', 'teacherName', 'Full Name', 'Name of Teacher']);
-          if (staffIdVal && teacherNameVal) {
-            stagedTeachers.push(row);
-            continue;
-          }
-
-          const schoolName = getVal(row, ['School', 'School Name', 'school', 'name', 'Institution']);
-          const emisCode = getVal(row, ['EMIS', 'EMIS Code', 'code', 'School Code']);
-          if (!schoolName && !emisCode) continue;
-
-          const stage = getOrInitStage(String(schoolName || emisCode), emisCode ? String(emisCode) : undefined);
-
-          // 1. Basic Info fields
-          const cirVal = getVal(row, ['Circuit', 'Circuit Name']);
-          if (cirVal) stage.circuit = String(cirVal).trim().toUpperCase();
-
-          const ownVal = getVal(row, ['Ownership', 'own', 'Type']);
-          if (ownVal) stage.own = String(ownVal).trim();
-
-          const headVal = getVal(row, ['Head teacher', 'Headteacher', 'head', 'Head']);
-          if (headVal) stage.head = String(headVal).trim();
-
-          const statusVal = getVal(row, ['Status', 'Verification']);
-          if (statusVal) stage.status = String(statusVal).trim();
-
-          if (emisCode) stage.code = String(emisCode).trim().toUpperCase();
-
-          // 2. Enrolment fields (supports both wide columns & level-row format)
-          const levelRowName = getVal(row, ['Level', 'Stage']);
-          if (levelRowName) {
-            const normLv = normalizeKey(String(levelRowName));
-            const lvCode =
-              normLv.includes('KG') || normLv.includes('KINDER')
-                ? 'KG'
-                : normLv.includes('PRI')
-                ? 'PRI'
-                : normLv.includes('JHS') || normLv.includes('JUNIOR')
-                ? 'JHS'
-                : '';
-            if (lvCode) {
-              if (!stage.enr) stage.enr = { KG: [0, 0], PRI: [0, 0], JHS: [0, 0] };
-              const b = parseInt(String(getVal(row, ['Boys', 'Male']) || 0), 10) || 0;
-              const g = parseInt(String(getVal(row, ['Girls', 'Female']) || 0), 10) || 0;
-              stage.enr[lvCode] = [b, g];
-            }
+          if (matched && matched.id) {
+            updatedCount++;
+            return updateDoc(doc(db, 'schools', matched.id), payload);
           } else {
-            const kgB = getVal(row, ['KG Boys', 'KG_Boys', 'Kindergarten Boys']);
-            const kgG = getVal(row, ['KG Girls', 'KG_Girls', 'Kindergarten Girls']);
-            const priB = getVal(row, ['PRI Boys', 'Primary Boys', 'PRI_Boys']);
-            const priG = getVal(row, ['PRI Girls', 'Primary Girls', 'PRI_Girls']);
-            const jhsB = getVal(row, ['JHS Boys', 'Junior High Boys', 'JHS_Boys']);
-            const jhsG = getVal(row, ['JHS Girls', 'Junior High Girls', 'JHS_Girls']);
-            const totB = getVal(row, ['Boys', 'Total Boys']);
-            const totG = getVal(row, ['Girls', 'Total Girls']);
-
-            if (
-              kgB !== undefined ||
-              kgG !== undefined ||
-              priB !== undefined ||
-              priG !== undefined ||
-              jhsB !== undefined ||
-              jhsG !== undefined
-            ) {
-              if (!stage.enr) stage.enr = { KG: [0, 0], PRI: [0, 0], JHS: [0, 0] };
-              if (kgB !== undefined || kgG !== undefined)
-                stage.enr.KG = [parseInt(String(kgB || 0), 10) || 0, parseInt(String(kgG || 0), 10) || 0];
-              if (priB !== undefined || priG !== undefined)
-                stage.enr.PRI = [parseInt(String(priB || 0), 10) || 0, parseInt(String(priG || 0), 10) || 0];
-              if (jhsB !== undefined || jhsG !== undefined)
-                stage.enr.JHS = [parseInt(String(jhsB || 0), 10) || 0, parseInt(String(jhsG || 0), 10) || 0];
-            } else if (totB !== undefined || totG !== undefined) {
-              const b = parseInt(String(totB || 0), 10) || 0;
-              const g = parseInt(String(totG || 0), 10) || 0;
-              if (!stage.enr) stage.enr = { KG: [0, 0], PRI: [0, 0], JHS: [0, 0] };
-              stage.enr.KG = [Math.round(b * 0.2), Math.round(g * 0.2)];
-              stage.enr.PRI = [Math.round(b * 0.55), Math.round(g * 0.55)];
-              stage.enr.JHS = [b - Math.round(b * 0.75), g - Math.round(g * 0.75)];
-            }
-          }
-
-          // 3. Teaching Staff fields
-          const tHave = getVal(row, ['Teachers', 'Have', 'Total Teachers', 'Teaching Staff']);
-          const tQual = getVal(row, ['Qualified teachers', 'Professionally qualified', 'Qualified']);
-          if (tHave !== undefined || tQual !== undefined) {
-            const curH = stage.teachers?.[0] || 0;
-            const curQ = stage.teachers?.[1] || 0;
-            const newH = tHave !== undefined ? parseInt(String(tHave), 10) || 0 : curH;
-            const newQ = tQual !== undefined ? parseInt(String(tQual), 10) || 0 : Math.min(newH, curQ || newH);
-            stage.teachers = [newH, Math.min(newH, newQ)];
-          }
-
-          // 4. Facilities fields
-          FAC.forEach(f => {
-            const fVal = getVal(row, [f]);
-            if (fVal !== undefined) {
-              if (!stage.fac) {
-                stage.fac = {};
-                FAC.forEach(k => (stage.fac![k] = false));
-              }
-              const sVal = String(fVal).trim().toLowerCase();
-              stage.fac[f] = sVal === 'yes' || sVal === 'true' || sVal === '1' || sVal === 'checked' || sVal === 'ok';
-            }
-          });
-
-          // 5. Books Records fields
-          const subjCol = getVal(row, ['Subject']);
-          if (subjCol && normSheet.includes('BOOK')) {
-            const matchedSubj = SUBJ.find(s => normalizeKey(s) === normalizeKey(String(subjCol)));
-            if (matchedSubj) {
-              if (!stage.books) {
-                stage.books = {};
-                SUBJ.forEach(k => (stage.books![k] = [0, 0]));
-              }
-              const reqB = parseInt(String(getVal(row, ['Required']) || 0), 10) || 0;
-              const availB = parseInt(String(getVal(row, ['Available']) || 0), 10) || 0;
-              stage.books[matchedSubj] = [reqB, availB];
-            }
-          } else {
-            SUBJ.forEach(sub => {
-              const reqB = getVal(row, [`${sub} Required`, `${sub}_Required`]);
-              const availB = getVal(row, [`${sub} Available`, `${sub}_Available`, sub]);
-              if (reqB !== undefined || availB !== undefined) {
-                if (!stage.books) {
-                  stage.books = {};
-                  SUBJ.forEach(k => (stage.books![k] = [0, 0]));
-                }
-                const curR = stage.books[sub]?.[0] || 0;
-                const curA = stage.books[sub]?.[1] || 0;
-                stage.books[sub] = [
-                  reqB !== undefined ? parseInt(String(reqB), 10) || 0 : curR,
-                  availB !== undefined ? parseInt(String(availB), 10) || 0 : curA,
-                ];
-              }
-            });
-          }
-        }
-      }
-
-      // If replace mode is selected, delete existing schools that are NOT in the imported workbook
-      if (importMode === 'replace' && stagedSchools.size > 0) {
-        const importedKeys = new Set(stagedSchools.keys());
-        const deletePromises = schoolsData
-          .filter((raw: any) => !importedKeys.has(normalizeKey(raw.school || raw.name || '')))
-          .map((raw: any) => deleteDoc(doc(db, 'schools', raw.id)));
-        await Promise.all(deletePromises);
-      }
-
-      // Commit staged schools to Firestore with strict duplicate prevention
-      let schoolsAdded = 0;
-      let schoolsUpdated = 0;
-
-      const writePromises: Promise<any>[] = [];
-      for (const item of stagedSchools.values()) {
-        const payload: Record<string, any> = {
-          school: item.school,
-          circuit: item.circuit || 'ASHAMANG',
-          code: item.code || `TM-${Math.floor(1000 + Math.random() * 9000)}`,
-          own: item.own || 'Public',
-          cat: item.cat || 'Basic',
-          head: item.head || 'Assigned Head',
-          status: item.status || 'Verified',
-          updatedAt: serverTimestamp(),
-        };
-        if (item.enr) payload.enr = item.enr;
-        if (item.teachers) payload.teachers = item.teachers;
-        if (item.fac) payload.fac = item.fac;
-        if (item.books) payload.books = item.books;
-
-        if (item.existing?.firestoreId) {
-          schoolsUpdated++;
-          writePromises.push(updateDoc(doc(db, 'schools', item.existing.firestoreId), payload));
-        } else {
-          schoolsAdded++;
-          writePromises.push(
-            addDoc(collection(db, 'schools'), {
+            addedCount++;
+            return addDoc(collection(db, 'schools'), {
               ...payload,
               createdAt: serverTimestamp(),
-            })
+            });
+          }
+        })
+      );
+      onProgress?.(`Saved ${Math.min(i + 40, uniqueIncoming.length)} of ${uniqueIncoming.length} schools...`);
+    }
+
+    return { addedCount, updatedCount, inFileDuplicates };
+  };
+
+  // Handle Workbook Import (supports Official 5-Sheet GES Census Workbook + custom Excel/CSV)
+  const handleImportWorkbook = async () => {
+    if (!file) return;
+    setBusy(true);
+    setImportMsg('Reading workbook...');
+    try {
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      if (ext === 'csv') {
+        const text = await file.text();
+        const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+        const rows = (parsed.data as any[]).filter(r => r.School || r.name || r['School Name']);
+        const mapped = rows.map((r, i) => ({
+          emis: txt(r.EMIS || r.code || `TM-${1000 + i}`),
+          name: txt(r.School || r.name || r['School Name']).toUpperCase(),
+          circuit: txt(r.Circuit || r.circuit || 'ASHAMANG').toUpperCase(),
+          type: txt(r.Type || r.Ownership || 'PUBLIC').toUpperCase(),
+          head: txt(r['Head teacher'] || r.Head || ''),
+          levels: txt(r.Levels || 'KG, PRY & JHS'),
+          enr: [
+            num(r['KG Boys']),
+            num(r['KG Girls']),
+            num(r['PRI Boys']),
+            num(r['PRI Girls']),
+            num(r['JHS Boys']),
+            num(r['JHS Girls']),
+          ],
+          rooms: num(r.Classrooms || 11),
+        }));
+        const res = await saveBulkSchoolsToFirestore(mapped, importMode, setImportMsg);
+        setImportMsg(
+          `Imported ${mapped.length} schools (${res.addedCount} new, ${res.updatedCount} existing updated, ${res.inFileDuplicates} duplicate rows merged).`
+        );
+      } else {
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+
+        // Check if this is the official GES 5-sheet census workbook (has BASIC INFO sheet)
+        if (wb.Sheets['BASIC INFO']) {
+          const { schools: parsedSchools, stat } = parseOfficialCensusWorkbook(wb);
+          if (!parsedSchools.length) {
+            throw new Error('No schools found in BASIC INFO sheet. Check this is the census workbook.');
+          }
+          const res = await saveBulkSchoolsToFirestore(parsedSchools, importMode, setImportMsg);
+          setImportMsg(
+            `Imported ${parsedSchools.length} schools (${res.addedCount} new, ${res.updatedCount} updated without duplication). Matched by school name: staff lists for ${stat.teachers}, facilities for ${stat.facilities}, textbooks for ${stat.books}.`
+          );
+        } else {
+          // Fallback: flexible multi-sheet or single-sheet Excel workbook
+          const firstSheet = wb.Sheets[wb.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json<any>(firstSheet, { defval: '' });
+          const mapped = rows
+            .filter(r => r.School || r.name || r['School Name'] || r.EMIS)
+            .map((r, i) => ({
+              emis: txt(r.EMIS || r.code || `TM-${1000 + i}`),
+              name: txt(r.School || r.name || r['School Name']).toUpperCase(),
+              circuit: txt(r.Circuit || r.circuit || 'ASHAMANG').toUpperCase(),
+              type: txt(r.Type || r.Ownership || 'PUBLIC').toUpperCase(),
+              head: txt(r['Head teacher'] || r.Head || ''),
+              levels: txt(r.Levels || 'KG, PRY & JHS'),
+              enr: [
+                num(r['KG Boys'] || r.Boys),
+                num(r['KG Girls'] || r.Girls),
+                num(r['PRI Boys']),
+                num(r['PRI Girls']),
+                num(r['JHS Boys']),
+                num(r['JHS Girls']),
+              ],
+              rooms: num(r.Classrooms || 11),
+            }));
+          if (!mapped.length) {
+            throw new Error('No school rows found. Ensure your workbook has BASIC INFO or a School column.');
+          }
+          const res = await saveBulkSchoolsToFirestore(mapped, importMode, setImportMsg);
+          setImportMsg(
+            `Imported ${mapped.length} schools (${res.addedCount} new, ${res.updatedCount} updated, ${res.inFileDuplicates} duplicates merged).`
           );
         }
       }
-
-      // Commit any external teacher rows with Staff ID duplicate check
-      let teachersAdded = 0;
-      let teachersUpdated = 0;
-      if (stagedTeachers.length > 0) {
-        const existingSubByStaffId = new Map<string, any>();
-        submissions.forEach((sub: any) => {
-          if (sub.staffId) {
-            existingSubByStaffId.set(normalizeKey(sub.staffId), sub);
-          }
-        });
-
-        const seenStaffIdsInFile = new Set<string>();
-
-        for (const tRow of stagedTeachers) {
-          const rawStaffId = String(getVal(tRow, ['Staff ID', 'staffId', 'Staff_ID', 'Employee ID']) || '').trim();
-          const normStaffId = normalizeKey(rawStaffId);
-          if (!normStaffId) continue;
-
-          if (seenStaffIdsInFile.has(normStaffId)) {
-            duplicatesMergedCount++;
-            continue;
-          }
-          seenStaffIdsInFile.add(normStaffId);
-
-          const teacherName = String(
-            getVal(tRow, ['Teacher Name', 'teacherName', 'Full Name', 'Name of Teacher']) || ''
-          )
-            .trim()
-            .toUpperCase();
-          const school = String(getVal(tRow, ['School', 'School Name', 'school']) || '')
-            .trim()
-            .toUpperCase();
-          const circuit = String(getVal(tRow, ['Circuit', 'circuit']) || '')
-            .trim()
-            .toUpperCase();
-          const category = String(getVal(tRow, ['Category', 'category']) || 'BASIC SCHOOL')
-            .trim()
-            .toUpperCase();
-          const currentRank = String(getVal(tRow, ['Current Rank', 'Rank', 'currentRank']) || '').trim();
-          const regNo = String(getVal(tRow, ['Reg. No.', 'Reg No', 'regNo']) || '').trim();
-          const mobile = String(getVal(tRow, ['Mobile', 'Mobile No.', 'Phone']) || '').trim();
-          const email = String(getVal(tRow, ['Email', 'email']) || '').trim();
-
-          const existingSub = existingSubByStaffId.get(normStaffId);
-          if (existingSub) {
-            teachersUpdated++;
-            duplicatesMergedCount++;
-            writePromises.push(
-              updateDoc(doc(db, 'submissions', existingSub.id), {
-                teacherName: teacherName || existingSub.teacherName,
-                school: school || existingSub.school,
-                circuit: circuit || existingSub.circuit,
-                category: category || existingSub.category,
-                currentRank: currentRank || existingSub.currentRank,
-                regNo: regNo || existingSub.regNo,
-                mobile: mobile || existingSub.mobile,
-                email: email || existingSub.email,
-                status: 'submitted',
-                updatedAt: serverTimestamp(),
-              })
-            );
-          } else {
-            teachersAdded++;
-            writePromises.push(
-              addDoc(collection(db, 'submissions'), {
-                staffId: rawStaffId,
-                teacherName,
-                school,
-                circuit,
-                category,
-                currentRank,
-                regNo,
-                mobile,
-                email,
-                status: 'submitted',
-                submittedAt: serverTimestamp(),
-              })
-            );
-          }
-        }
-      }
-
-      await Promise.all(writePromises);
-
-      setImportSummary({
-        schoolsAdded,
-        schoolsUpdated,
-        DuplicatesSkippedOrMerged: duplicatesMergedCount,
-        teachersAdded,
-        teachersUpdated,
-      });
-      setSelectedFile(null);
+      setFile(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
-      showToast(
-        `Workbook imported: ${schoolsAdded} new, ${schoolsUpdated} updated (${duplicatesMergedCount} duplicates merged)`
-      );
-    } catch (err: any) {
-      console.error('Import workbook error:', err);
-      showToast(`Import failed: ${err?.message || 'Check file format'}`);
+      showToast('Workbook imported successfully');
+    } catch (e: any) {
+      setImportMsg('Failed: ' + (e && e.message ? e.message : 'unexpected error'));
     } finally {
-      setImporting(false);
+      setBusy(false);
     }
   };
 
-  // Filtered school list for Schools page
-  const filteredSchools = useMemo(() => {
-    return S.filter(
-      s =>
-        (cir === 'All' || s.circuit === cir) &&
-        (s.name + ' ' + s.code + ' ' + s.head).toLowerCase().includes(q.toLowerCase())
-    );
-  }, [S, cir, q]);
-
-  const PAGES: [typeof page, string][] = [
-    ['dash', 'Dashboard'],
-    ['schools', 'Schools'],
-    ['enrol', 'Enrolment'],
-    ['staff', 'Teaching staff'],
-    ['fac', 'Facilities'],
-    ['books', 'Textbooks'],
-    ['rep', 'Reports'],
+  const tabs: [typeof tab, string, any][] = [
+    ['dashboard', 'Dashboard', LayoutDashboard],
+    ['schools', 'Schools', School],
+    ['enrolment', 'Enrolment', GraduationCap],
+    ['staffing', 'Staffing', Users],
+    ['facilities', 'Facilities', Building2],
+    ['textbooks', 'Textbooks', BookOpen],
+    ['reports', 'Reports', FileText],
+    ['import', 'Import', Upload],
   ];
 
-  // School Picker Dropdown used across Enrolment, Facilities, Textbooks
-  const renderPicker = () => (
-    <div className="edms-row">
-      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
-        School{' '}
-        <select
-          value={activeSchool?.id || ''}
-          onChange={e => setSelectedSchoolId(e.target.value)}
-        >
-          {S.map(s => (
-            <option key={s.id} value={s.id}>
-              {s.name} ({s.circuit})
-            </option>
-          ))}
-        </select>
-      </label>
-    </div>
-  );
+  const reps = useMemo(() => buildReports(schools, target), [schools, target]);
+  const activeReport = reps.find(x => x.id === reportId) || reps[0];
 
-  // SVG Bar chart for Enrolment by level
-  const renderBars = (data: { k: string; v: [number, number] }[], h = 170) => {
-    const mx = Math.max(1, ...data.map(d => d.v[0] + d.v[1]));
-    return (
-      <>
-        <svg viewBox={`0 0 300 ${h + 30}`} width="100%" role="img" aria-label="Enrolment by level">
-          {data.map((d, i) => {
-            const x = i * (300 / data.length) + 20;
-            const bw = 300 / data.length - 40;
-            const hb = (d.v[0] / mx) * h;
-            const hg = (d.v[1] / mx) * h;
-            return (
-              <g key={d.k}>
-                <rect x={x} y={h - hb} width={bw / 2} height={hb} fill="var(--pr)" />
-                <rect x={x + bw / 2} y={h - hg} width={bw / 2} height={hg} fill="var(--ac)" />
-                <text x={x + bw / 2} y={h + 16} textAnchor="middle" fontSize="11" fill="var(--mu)">
-                  {d.k}
-                </text>
-                <text
-                  x={x + bw / 2}
-                  y={h - Math.max(hb, hg) - 4}
-                  textAnchor="middle"
-                  fontSize="10"
-                  fill="var(--tx)"
-                >
-                  {f1(d.v[0] + d.v[1])}
-                </text>
-              </g>
-            );
-          })}
-        </svg>
-        <div className="edms-note">
-          <span style={{ color: 'var(--pr)' }}>■</span> Boys &nbsp;
-          <span style={{ color: 'var(--ac)' }}>■</span> Girls
-        </div>
-      </>
+  const handleDownloadSingleReportExcel = () => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.aoa_to_sheet([activeReport.cols, ...activeReport.rows]),
+      'Report'
     );
+    XLSX.writeFile(wb, 'Tema-Metro-' + activeReport.title.replace(/\s+/g, '-') + '.xlsx');
+    showToast(`Downloaded ${activeReport.title}`);
+  };
+
+  const handleDownloadAllReportsWorkbook = () => {
+    const wb = XLSX.utils.book_new();
+    reps.forEach(r => {
+      const sheetName = r.title.slice(0, 31);
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([r.cols, ...r.rows]), sheetName);
+    });
+    XLSX.writeFile(wb, `Tema-Metro-Complete-EDMS-Reports-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    showToast('Downloaded all 7 Directorate Reports (.xlsx)');
+  };
+
+  const handlePrintReportPdf = () => {
+    const esc = (v: any) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    const w = window.open('', '_blank');
+    if (!w) return;
+    w.document.write(
+      '<html><head><title>' +
+        esc(activeReport.title) +
+        '</title><style>body{font-family:Arial,sans-serif;padding:16px}h3{margin:0 0 4px;color:#065f46}p{margin:0 0 12px;font-size:12px;color:#555}table{border-collapse:collapse;width:100%;font:11px Arial}th{background:#065f46;color:#fff;text-align:left;padding:5px;border:1px solid #065f46}td{border:1px solid #999;padding:4px}</style></head><body><h3>Tema Metro Education Directorate - ' +
+        esc(activeReport.title) +
+        '</h3><p>Generated on ' +
+        new Date().toLocaleDateString('en-GB') +
+        ' · ' +
+        activeReport.rows.length +
+        ' records</p><table><tr>' +
+        activeReport.cols.map((c: string) => '<th>' + esc(c) + '</th>').join('') +
+        '</tr>' +
+        activeReport.rows
+          .map((row: any[]) => '<tr>' + row.map(v => '<td>' + esc(v) + '</td>').join('') + '</tr>')
+          .join('') +
+        '</table></body></html>'
+    );
+    w.document.close();
+    w.print();
   };
 
   return (
-    <div className="edms-scope" data-theme={theme}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=Public+Sans:wght@400;500;600&display=swap');
-        .edms-scope {
-          --bg: #f3f5f1;
-          --sf: #fff;
-          --tx: #17231d;
-          --mu: #5c6b62;
-          --ln: #d9dfd8;
-          --pr: #14503a;
-          --pt: #fff;
-          --ac: #c58a12;
-          --bad: #b4442c;
-          --ok: #2f7d4f;
-          --nav: #12372a;
-          --navt: #d6e5dc;
-          box-sizing: border-box;
-          color-scheme: light;
-          background: var(--bg);
-          color: var(--tx);
-          font: 15px/1.5 "Public Sans", system-ui, sans-serif;
-          min-height: 100vh;
-        }
-        .edms-scope[data-theme="dark"] {
-          --bg: #0f1713;
-          --sf: #17221c;
-          --tx: #e6eee9;
-          --mu: #9bb0a4;
-          --ln: #2a3a31;
-          --pr: #5bbf8f;
-          --pt: #0b1a12;
-          --ac: #e0a93a;
-          --bad: #e5836b;
-          --ok: #6cc890;
-          --nav: #0a110e;
-          --navt: #b8cfc2;
-          color-scheme: dark;
-        }
-        .edms-scope * { box-sizing: border-box; }
-        .edms-scope h1, .edms-scope h2, .edms-scope h3 {
-          font-family: "Bricolage Grotesque", "Public Sans", sans-serif;
-          margin: 0;
-          letter-spacing: -.01em;
-        }
-        .edms-app {
-          display: grid;
-          grid-template-columns: 220px 1fr;
-          min-height: 100vh;
-        }
-        .edms-nav {
-          background: var(--nav);
-          color: var(--navt);
-          padding: 20px 12px;
-          position: sticky;
-          top: 0;
-          height: 100vh;
-          align-self: start;
-          display: flex;
-          flex-direction: column;
-        }
-        .edms-nav .brand {
-          font: 700 20px "Bricolage Grotesque", sans-serif;
-          color: #fff;
-          padding: 0 10px 4px;
-        }
-        .edms-nav small {
-          display: block;
-          padding: 0 10px 18px;
-          opacity: .7;
-          font-size: 12px;
-        }
-        .edms-nav button {
-          display: block;
-          width: 100%;
-          text-align: left;
-          background: none;
-          border: 0;
-          color: inherit;
-          font: inherit;
-          padding: 9px 10px;
-          border-radius: 6px;
-          cursor: pointer;
-        }
-        .edms-nav button:hover { background: rgba(255,255,255,.08); }
-        .edms-nav button[aria-current="page"] {
-          background: var(--ac);
-          color: #201603;
-          font-weight: 600;
-        }
-        .edms-nav .th {
-          margin-top: 18px;
-          border-top: 1px solid rgba(255,255,255,.15);
-          padding-top: 12px;
-          font-size: 13px;
-        }
-        .edms-main {
-          padding: 24px clamp(14px, 3vw, 36px);
-          min-width: 0;
-        }
-        .edms-top {
-          display: flex;
-          justify-content: space-between;
-          align-items: end;
-          gap: 12px;
-          flex-wrap: wrap;
-          margin-bottom: 18px;
-        }
-        .edms-top p { margin: 2px 0 0; color: var(--mu); }
-        .edms-kpis {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-          gap: 12px;
-          margin-bottom: 18px;
-        }
-        .edms-kpi {
-          background: var(--sf);
-          border: 1px solid var(--ln);
-          border-left: 4px solid var(--pr);
-          padding: 12px 14px;
-          border-radius: 4px;
-        }
-        .edms-kpi b {
-          display: block;
-          font: 700 26px "Bricolage Grotesque", sans-serif;
-        }
-        .edms-kpi span { color: var(--mu); font-size: 13px; }
-        .edms-kpi.w { border-left-color: var(--bad); }
-        .edms-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-          gap: 14px;
-        }
-        .edms-card {
-          background: var(--sf);
-          border: 1px solid var(--ln);
-          border-radius: 6px;
-          padding: 16px;
-          min-width: 0;
-        }
-        .edms-card h3 { font-size: 17px; margin-bottom: 10px; }
-        .edms-tw { overflow-x: auto; }
-        .edms-scope table {
-          border-collapse: collapse;
-          width: 100%;
-          font-size: 14px;
-        }
-        .edms-scope th, .edms-scope td {
-          text-align: left;
-          padding: 8px 10px;
-          border-bottom: 1px solid var(--ln);
-          white-space: nowrap;
-        }
-        .edms-scope th {
-          font-weight: 600;
-          color: var(--mu);
-          font-size: 13px;
-        }
-        .edms-scope td.n, .edms-scope th.n {
-          text-align: right;
-          font-variant-numeric: tabular-nums;
-        }
-        .edms-scope input:not([type="file"]):not([type="checkbox"]), .edms-scope select {
-          font: inherit;
-          color: var(--tx);
-          background: var(--bg);
-          border: 1px solid var(--ln);
-          border-radius: 4px;
-          padding: 7px 9px;
-          min-width: 0;
-        }
-        .edms-scope input[type="number"] { width: 84px; text-align: right; }
-        .edms-scope button.b {
-          background: var(--pr);
-          color: var(--pt);
-          border: 0;
-          border-radius: 4px;
-          padding: 8px 14px;
-          font: 600 14px "Public Sans", sans-serif;
-          cursor: pointer;
-        }
-        .edms-scope button.b:disabled {
-          opacity: 0.55;
-          cursor: not-allowed;
-        }
-        .edms-scope button.g {
-          background: none;
-          border: 1px solid var(--ln);
-          color: var(--tx);
-          border-radius: 4px;
-          padding: 6px 10px;
-          cursor: pointer;
-          font: inherit;
-        }
-        .edms-tag {
-          display: inline-block;
-          padding: 1px 8px;
-          border-radius: 10px;
-          font-size: 12px;
-          font-weight: 600;
-        }
-        .edms-tag.ok {
-          background: color-mix(in srgb, var(--ok) 18%, transparent);
-          color: var(--ok);
-        }
-        .edms-tag.bad {
-          background: color-mix(in srgb, var(--bad) 18%, transparent);
-          color: var(--bad);
-        }
-        .edms-tag.am {
-          background: color-mix(in srgb, var(--ac) 22%, transparent);
-          color: var(--ac);
-        }
-        .edms-bar {
-          height: 8px;
-          background: var(--ln);
-          border-radius: 4px;
-          overflow: hidden;
-          min-width: 70px;
-        }
-        .edms-bar i {
-          display: block;
-          height: 100%;
-          background: var(--pr);
-        }
-        .edms-row {
-          display: flex;
-          gap: 10px;
-          flex-wrap: wrap;
-          align-items: center;
-          margin-bottom: 12px;
-        }
-        .edms-fg {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-          gap: 10px;
-          margin-bottom: 12px;
-        }
-        .edms-fg label {
-          display: flex;
-          flex-direction: column;
-          font-size: 13px;
-          color: var(--mu);
-          gap: 3px;
-        }
-        .edms-chk {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-          gap: 6px;
-        }
-        .edms-chk label {
-          display: flex;
-          gap: 8px;
-          align-items: center;
-          padding: 6px 8px;
-          border: 1px solid var(--ln);
-          border-radius: 4px;
-          cursor: pointer;
-        }
-        .edms-note { color: var(--mu); font-size: 13px; }
-        .edms-toast {
-          position: fixed;
-          bottom: 20px;
-          right: 20px;
-          background: var(--tx);
-          color: var(--bg);
-          padding: 10px 16px;
-          border-radius: 6px;
-          z-index: 9999;
-          font-weight: 600;
-          box-shadow: 0 10px 25px rgba(0,0,0,0.25);
-        }
-        @media (max-width: 760px) {
-          .edms-app { grid-template-columns: 1fr; }
-          .edms-nav {
-            position: static;
-            height: auto;
-            flex-direction: row;
-            flex-wrap: wrap;
-            gap: 4px;
-            padding: 12px;
-          }
-          .edms-nav .brand, .edms-nav small { width: 100%; }
-          .edms-nav button { width: auto; }
-          .edms-nav .th { margin: 0; border: 0; padding: 0; }
-        }
-      `}</style>
+    <div
+      style={{
+        minHeight: '100vh',
+        backgroundColor: isDark ? '#0f172a' : '#f1f5f9',
+        color: isDark ? '#f8fafc' : '#0f172a',
+        fontFamily: '"Public Sans", system-ui, -apple-system, sans-serif',
+      }}
+    >
+      {/* Top Header matching tema-metro-edms */}
+      <header
+        style={{
+          backgroundColor: '#065f46',
+          padding: '14px 20px',
+          color: '#ffffff',
+          borderBottom: '1px solid rgba(255,255,255,0.12)',
+        }}
+      >
+        <div
+          style={{
+            maxWidth: '1150px',
+            margin: '0 auto',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '12px',
+          }}
+        >
+          <div>
+            <div style={{ fontSize: '12px', opacity: 0.85 }}>
+              Ghana Education Service · Tema Metro Education Directorate
+            </div>
+            <h1 style={{ margin: '2px 0 0', fontSize: '19px', fontWeight: 800 }}>
+              Education Directorate Management System (EDMS)
+            </h1>
+          </div>
 
-      <div className="edms-app">
-        <nav className="edms-nav">
-          <div className="brand">EDMS</div>
-          <small>Tema Metro Education Directorate</small>
-          {PAGES.map(([k, n]) => (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <button
-              key={k}
-              aria-current={page === k ? 'page' : undefined}
-              onClick={() => setPage(k)}
+              onClick={() => setIsDark(d => !d)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                backgroundColor: 'rgba(255,255,255,0.12)',
+                color: '#fff',
+                border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: '6px',
+                padding: '6px 12px',
+                fontSize: '12.5px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
             >
-              {n}
-            </button>
-          ))}
-          <div className="th">
-            <button onClick={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))}>
-              Switch light / dark
+              {isDark ? <Sun size={14} /> : <Moon size={14} />}
+              {isDark ? 'Light mode' : 'Dark mode'}
             </button>
             {onBackToAdmin && (
               <button
                 onClick={onBackToAdmin}
-                style={{ marginTop: '6px', opacity: 0.85 }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  backgroundColor: '#ffffff',
+                  color: '#065f46',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '6px 12px',
+                  fontSize: '12.5px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
               >
-                ← Admin Records Panel
+                <ArrowLeft size={14} /> Back to Submissions
               </button>
             )}
           </div>
-        </nav>
+        </div>
+      </header>
 
-        <main className="edms-main">
-          {/* 1. DASHBOARD */}
-          {page === 'dash' && (() => {
-            const T = sum(S.map(tot));
-            const Tt = sum(S.map(s => s.teachers[0]));
-            const B = sum(S.map(boys));
-            const G = sum(S.map(girls));
-            const lv = LV.map(([k, n]) => ({
-              k: n,
-              v: [
-                sum(S.map(s => s.enr[k]?.[0] || 0)),
-                sum(S.map(s => s.enr[k]?.[1] || 0)),
-              ] as [number, number],
-            }));
-            const def = S.filter(s => gap(s) > 0)
-              .sort((a, b) => gap(b) - gap(a))
-              .slice(0, 5);
-            const low = [...S].sort((a, b) => fscore(a) - fscore(b)).slice(0, 5);
-            const cls = Math.max(1, sum(S.map(() => LV.reduce((a, l) => a + l[2], 0))));
-            const avgBratio = S.length ? sum(S.map(bratio)) / S.length : 0;
-            const ptr = Tt ? T / Tt : 0;
-
+      {/* Horizontal Navigation Bar matching tema-metro-edms */}
+      <nav
+        style={{
+          overflowX: 'auto',
+          borderBottom: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+          backgroundColor: isDark ? '#1e293b' : '#ffffff',
+          position: 'sticky',
+          top: 0,
+          zIndex: 20,
+        }}
+      >
+        <div
+          style={{
+            maxWidth: '1150px',
+            margin: '0 auto',
+            display: 'flex',
+          }}
+        >
+          {tabs.map(([id, label, Icon]) => {
+            const active = tab === id;
             return (
-              <>
-                <div className="edms-top">
-                  <div>
-                    <h1>Municipal overview</h1>
-                    <p>
-                      Academic year 2025/26 · {S.length} schools in the directorate ·{' '}
-                      {validSubmissions.length} submitted staff records mapped
-                    </p>
-                  </div>
-                </div>
-
-                <div className="edms-kpis">
-                  <div className="edms-kpi">
-                    <b>{S.length}</b>
-                    <span>Schools</span>
-                  </div>
-                  <div className="edms-kpi">
-                    <b>{f1(T)}</b>
-                    <span>Learners</span>
-                  </div>
-                  <div className="edms-kpi">
-                    <b>{f1(Tt)}</b>
-                    <span>Teachers ({validSubmissions.length} portal records)</span>
-                  </div>
-                  <div className="edms-kpi">
-                    <b>{B ? (G / B).toFixed(2) : '1.00'}</b>
-                    <span>Gender parity index</span>
-                  </div>
-                  <div className={`edms-kpi ${ptr > 35 ? 'w' : ''}`}>
-                    <b>{Tt ? `${ptr.toFixed(1)}:1` : '–'}</b>
-                    <span>Pupil–teacher ratio</span>
-                  </div>
-                  <div className="edms-kpi">
-                    <b>{(T / cls).toFixed(0)}</b>
-                    <span>Learners per classroom</span>
-                  </div>
-                  <div className={`edms-kpi ${avgBratio < 0.8 ? 'w' : ''}`}>
-                    <b>{(avgBratio * 100).toFixed(0)}%</b>
-                    <span>Textbook coverage</span>
-                  </div>
-                </div>
-
-                <div className="edms-grid">
-                  <div className="edms-card">
-                    <h3>Enrolment by level</h3>
-                    {renderBars(lv)}
-                  </div>
-
-                  <div className="edms-card">
-                    <h3>Largest teacher deficits</h3>
-                    <div className="edms-tw">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>School</th>
-                            <th className="n">Have</th>
-                            <th className="n">Need</th>
-                            <th className="n">Gap</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {def.length > 0 ? (
-                            def.map(s => (
-                              <tr key={s.id}>
-                                <td>{s.name}</td>
-                                <td className="n">{s.teachers[0]}</td>
-                                <td className="n">{req(s)}</td>
-                                <td className="n">
-                                  <span className="edms-tag bad">−{gap(s)}</span>
-                                </td>
-                              </tr>
-                            ))
-                          ) : (
-                            <tr>
-                              <td colSpan={4}>No deficits</td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                    <p className="edms-note">
-                      Need = learners ÷ 35 (Have is automatically mapped from submitted teacher records).
-                    </p>
-                  </div>
-
-                  <div className="edms-card">
-                    <h3>Weakest infrastructure</h3>
-                    <div className="edms-tw">
-                      <table>
-                        <tbody>
-                          {low.map(s => (
-                            <tr key={s.id}>
-                              <td>{s.name}</td>
-                              <td style={{ width: '40%' }}>
-                                <div className="edms-bar">
-                                  <i style={{ width: `${fscore(s)}%`, background: 'var(--bad)' }} />
-                                </div>
-                              </td>
-                              <td className="n">{fscore(s)}%</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              </>
+              <button
+                key={id}
+                onClick={() => setTab(id)}
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  whiteSpace: 'nowrap',
+                  padding: '12px 14px',
+                  fontSize: '13.5px',
+                  fontWeight: active ? 700 : 500,
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: active ? '2.5px solid #059669' : '2.5px solid transparent',
+                  color: active ? (isDark ? '#34d399' : '#065f46') : isDark ? '#cbd5e1' : '#475569',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                }}
+              >
+                <Icon size={16} />
+                {label}
+              </button>
             );
-          })()}
+          })}
+        </div>
+      </nav>
 
-          {/* 2. SCHOOLS (With Register + Import Workbook + Duplicate Check) */}
-          {page === 'schools' && (
-            <>
-              <div className="edms-top">
-                <div>
-                  <h1>Schools</h1>
-                  <p>Register, import, search and verify school profiles</p>
-                </div>
+      {/* Main Content Container */}
+      <main style={{ maxWidth: '1150px', margin: '0 auto', padding: '20px 16px 48px' }}>
+        {/* 1. DASHBOARD */}
+        {tab === 'dashboard' && (() => {
+          const sum2 = (f: (s: any) => number) => sum(schools.map(f));
+          const boys = sum2(s => s.enr[0] + s.enr[2] + s.enr[4]);
+          const girls = sum2(s => s.enr[1] + s.enr[3] + s.enr[5]);
+          const total = boys + girls;
+          const tch = sum2(teachers);
+          const rooms = sum2(s => s.rooms);
+          const circuits = Array.from(new Set(schools.map(s => s.circuit))).sort();
+
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <Kpis
+                isDark={isDark}
+                items={[
+                  ['Schools', String(schools.length)],
+                  ['Pupils', total.toLocaleString()],
+                  ['Teachers', `${tch.toLocaleString()} (${validSubmissions.length} portal)`],
+                  ['Gender parity index', boys ? (girls / boys).toFixed(2) : '-'],
+                  ['Pupil-teacher ratio', tch ? (total / tch).toFixed(1) : '-'],
+                  ['Pupils per classroom', rooms ? (total / rooms).toFixed(1) : '-'],
+                  ['Trained teachers', pct(sum2(s => sum(s.trn)), tch) + '%'],
+                  ['Non-teaching staff', sum2(s => s.nts).toLocaleString()],
+                ]}
+              />
+
+              <Card title="By circuit" isDark={isDark}>
+                <Tbl
+                  isDark={isDark}
+                  cols={['Circuit', 'Schools', 'Pupils', 'Teachers', 'PTR']}
+                  rows={circuits.map(c => {
+                    const g = schools.filter(s => s.circuit === c);
+                    const p = sum(g.map(pupils));
+                    const t = sum(g.map(teachers));
+                    return [c, g.length, p.toLocaleString(), t, t ? (p / t).toFixed(1) : '-'];
+                  })}
+                />
+              </Card>
+            </div>
+          );
+        })()}
+
+        {/* 2. SCHOOLS */}
+        {tab === 'schools' && (() => {
+          const list = schools.filter(
+            s =>
+              (cirFilter === 'All' || s.circuit === cirFilter) &&
+              (s.name + ' ' + s.emis + ' ' + s.circuit).toUpperCase().includes(q.toUpperCase())
+          );
+
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <input
+                  style={{
+                    flex: 1,
+                    minWidth: '240px',
+                    borderRadius: '8px',
+                    border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                    backgroundColor: isDark ? '#1e293b' : '#ffffff',
+                    color: isDark ? '#f8fafc' : '#0f172a',
+                    padding: '9px 12px',
+                    fontSize: '13.5px',
+                  }}
+                  placeholder="Search by school name, EMIS code or circuit"
+                  value={q}
+                  onChange={e => setQ(e.target.value)}
+                />
+                <select
+                  value={cirFilter}
+                  onChange={e => setCirFilter(e.target.value)}
+                  style={{
+                    borderRadius: '8px',
+                    border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                    backgroundColor: isDark ? '#1e293b' : '#ffffff',
+                    color: isDark ? '#f8fafc' : '#0f172a',
+                    padding: '9px 12px',
+                    fontSize: '13.5px',
+                  }}
+                >
+                  {['All', ...allCircuits].map(c => (
+                    <option key={c} value={c}>
+                      {c === 'All' ? 'All Circuits' : c}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => setShowRegisterForm(v => !v)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    backgroundColor: '#047857',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '9px 14px',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Plus size={15} /> {showRegisterForm ? 'Close Form' : 'Register School'}
+                </button>
+                <button
+                  onClick={() => setTab('import')}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    backgroundColor: isDark ? '#334155' : '#e2e8f0',
+                    color: isDark ? '#f8fafc' : '#0f172a',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '9px 14px',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Upload size={15} /> Import Census Workbook (.xlsx)
+                </button>
               </div>
 
-              {/* Import census workbook (.xlsx) Card matching user screenshot */}
-              <div className="edms-card" style={{ marginBottom: '14px' }}>
-                <h3>Import census workbook (.xlsx)</h3>
-                <p className="edms-note" style={{ margin: '4px 0 12px' }}>
-                  Reads Basic Info, Enrolment, Teaching Staff, Facilities and Books Records (or external Teacher lists).
-                  Includes automatic duplicate check by EMIS code, School Name, and Staff ID to avoid data redundancy.
-                </p>
-                <div className="edms-row" style={{ marginBottom: '10px' }}>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".xlsx,.xls,.csv"
-                    onChange={e => setSelectedFile(e.target.files?.[0] || null)}
-                    style={{ fontSize: '14px', color: 'var(--tx)' }}
-                  />
-                  <label style={{ fontSize: '13px', color: 'var(--mu)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                    Duplicate handling:
-                    <select
-                      value={importMode}
-                      onChange={e => setImportMode(e.target.value as 'merge' | 'replace')}
-                    >
-                      <option value="merge">Smart Merge & Skip Redundant Duplicates (Recommended)</option>
-                      <option value="replace">Replace Existing Census Data</option>
-                    </select>
-                  </label>
-                </div>
-                <div className="edms-row" style={{ marginBottom: 0 }}>
-                  <button
-                    className="b"
-                    onClick={handleImportWorkbook}
-                    disabled={!selectedFile || importing}
-                    style={{ background: '#14503a', color: '#fff' }}
-                  >
-                    {importing ? 'Importing workbook...' : 'Import workbook'}
-                  </button>
-                  <button className="g" onClick={handleExportWorkbook}>
-                    Download template / current workbook (.xlsx)
-                  </button>
-                </div>
-
-                {importSummary && (
+              {showRegisterForm && (
+                <Card title="Register a new school (Duplicate-Checked)" isDark={isDark}>
                   <div
                     style={{
-                      marginTop: '12px',
-                      padding: '10px 12px',
-                      borderRadius: '4px',
-                      border: '1px solid var(--ln)',
-                      background: 'var(--bg)',
-                      fontSize: '13px',
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                      gap: '10px',
+                      marginBottom: '12px',
                     }}
                   >
-                    <strong style={{ color: 'var(--ok)' }}>Import Complete (Zero Redundancy):</strong>{' '}
-                    {importSummary.schoolsAdded} new schools added, {importSummary.schoolsUpdated} existing schools updated,{' '}
-                    {importSummary.DuplicatesSkippedOrMerged} duplicate rows merged
-                    {(importSummary.teachersAdded > 0 || importSummary.teachersUpdated > 0) &&
-                      `, ${importSummary.teachersAdded} new teachers imported, ${importSummary.teachersUpdated} existing teachers updated`}
-                    .
-                  </div>
-                )}
-              </div>
-
-              {/* Register a school */}
-              <div className="edms-card" style={{ marginBottom: '14px' }}>
-                <h3>Register a school</h3>
-                <div className="edms-fg">
-                  <label>
-                    School name
                     <input
+                      placeholder="School Name"
                       value={newName}
                       onChange={e => setNewName(e.target.value)}
-                      placeholder="e.g. TEMA REGULAR BAPTIST BASIC"
+                      style={{
+                        padding: '8px 10px',
+                        borderRadius: '6px',
+                        border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                        backgroundColor: isDark ? '#0f172a' : '#f8fafc',
+                        color: 'inherit',
+                      }}
                     />
-                  </label>
-                  <label>
-                    EMIS code
                     <input
+                      placeholder="EMIS Code (e.g. TM-1500)"
                       value={newCode}
                       onChange={e => setNewCode(e.target.value)}
-                      placeholder="TM-1500"
+                      style={{
+                        padding: '8px 10px',
+                        borderRadius: '6px',
+                        border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                        backgroundColor: isDark ? '#0f172a' : '#f8fafc',
+                        color: 'inherit',
+                      }}
                     />
-                  </label>
-                  <label>
-                    Ownership
-                    <select value={newOwn} onChange={e => setNewOwn(e.target.value)}>
-                      <option>Public</option>
-                      <option>Private</option>
-                      <option>Mission</option>
+                    <select
+                      value={newOwn}
+                      onChange={e => setNewOwn(e.target.value)}
+                      style={{
+                        padding: '8px 10px',
+                        borderRadius: '6px',
+                        border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                        backgroundColor: isDark ? '#0f172a' : '#f8fafc',
+                        color: 'inherit',
+                      }}
+                    >
+                      <option value="PUBLIC">PUBLIC</option>
+                      <option value="PRIVATE">PRIVATE</option>
+                      <option value="MISSION">MISSION</option>
                     </select>
-                  </label>
-                  <label>
-                    Circuit
-                    <select value={newCir} onChange={e => setNewCir(e.target.value)}>
-                      {CIR.map(c => (
+                    <select
+                      value={newCir}
+                      onChange={e => setNewCir(e.target.value)}
+                      style={{
+                        padding: '8px 10px',
+                        borderRadius: '6px',
+                        border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                        backgroundColor: isDark ? '#0f172a' : '#f8fafc',
+                        color: 'inherit',
+                      }}
+                    >
+                      {allCircuits.map(c => (
                         <option key={c} value={c}>
                           {c}
                         </option>
                       ))}
                     </select>
-                  </label>
-                  <label>
-                    Head teacher
                     <input
+                      placeholder="Head teacher name"
                       value={newHead}
                       onChange={e => setNewHead(e.target.value)}
-                      placeholder="Head teacher name"
+                      style={{
+                        padding: '8px 10px',
+                        borderRadius: '6px',
+                        border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                        backgroundColor: isDark ? '#0f172a' : '#f8fafc',
+                        color: 'inherit',
+                      }}
                     />
-                  </label>
-                </div>
-                <button className="b" onClick={handleAddSchool}>
-                  Register school
+                  </div>
+                  <button
+                    onClick={handleRegisterSchool}
+                    style={{
+                      backgroundColor: '#047857',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '8px 16px',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Save School
+                  </button>
+                </Card>
+              )}
+
+              <div style={{ fontSize: '12px', color: isDark ? '#94a3b8' : '#64748b' }}>
+                Showing {list.length} schools (click any school to inspect full census & portal staff details)
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {list.slice(0, 150).map(s => {
+                  const key = s.emis + s.name;
+                  const isOpen = openSchoolKey === key;
+                  return (
+                    <div
+                      key={s.id || key}
+                      style={{
+                        borderRadius: '10px',
+                        border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+                        backgroundColor: isDark ? '#1e293b' : '#ffffff',
+                        padding: '12px 16px',
+                        fontSize: '13.5px',
+                      }}
+                    >
+                      <button
+                        style={{
+                          width: '100%',
+                          textAlign: 'left',
+                          background: 'none',
+                          border: 'none',
+                          color: 'inherit',
+                          padding: 0,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: '8px',
+                        }}
+                        onClick={() => setOpenSchoolKey(isOpen ? '' : key)}
+                      >
+                        <div>
+                          <div style={{ fontWeight: 700, color: isDark ? '#f8fafc' : '#0f172a' }}>
+                            {s.name}
+                          </div>
+                          <div style={{ fontSize: '12px', color: isDark ? '#94a3b8' : '#64748b', marginTop: '2px' }}>
+                            {s.emis} · {s.circuit} · {s.type} · {pupils(s)} pupils · {teachers(s)} teachers (
+                            {s.portalTeachers?.length || 0} portal submissions) · facilities {score(s)}/8
+                          </div>
+                        </div>
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            padding: '2px 8px',
+                            borderRadius: '99px',
+                            backgroundColor: isOpen ? '#047857' : isDark ? '#334155' : '#f1f5f9',
+                            color: isOpen ? '#fff' : isDark ? '#cbd5e1' : '#475569',
+                            fontWeight: 600,
+                          }}
+                        >
+                          {isOpen ? 'Hide details' : 'View details'}
+                        </span>
+                      </button>
+
+                      {isOpen && (
+                        <div
+                          style={{
+                            marginTop: '12px',
+                            paddingTop: '12px',
+                            borderTop: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                            gap: '8px',
+                            fontSize: '12.5px',
+                          }}
+                        >
+                          <div>
+                            <b>Head teacher:</b> {s.head || '-'}
+                          </div>
+                          <div>
+                            <b>Levels:</b> {s.levels || '-'}
+                          </div>
+                          <div>
+                            <b>Management unit:</b> {s.mgmt || '-'}
+                          </div>
+                          <div>
+                            <b>Phone:</b> {s.phone || '-'}
+                          </div>
+                          <div>
+                            <b>Email:</b> {s.email || '-'}
+                          </div>
+                          <div>
+                            <b>PTR:</b> {ptr(s) ? ptr(s).toFixed(1) : '-'} · <b>Classrooms:</b> {s.rooms}
+                          </div>
+                          <div>
+                            <b>Teachers on staff list:</b> {tqo(s).n} (M {tqo(s).M} / F {tqo(s).F})
+                          </div>
+                          <div>
+                            <b>Textbooks short in:</b>{' '}
+                            {s.tb
+                              ? TB.filter((_, i) => s.tb?.[i] !== 'ADEQUATE').join(', ') || 'none'
+                              : 'no textbook data'}
+                          </div>
+                          <div style={{ gridColumn: '1 / -1' }}>
+                            <b>Missing facilities:</b> {missing(s)}
+                          </div>
+
+                          {s.portalTeachers && s.portalTeachers.length > 0 && (
+                            <div style={{ gridColumn: '1 / -1', marginTop: '6px' }}>
+                              <div style={{ fontWeight: 700, marginBottom: '6px', color: '#10b981' }}>
+                                Submitted Teachers Mapped from Portal ({s.portalTeachers.length}):
+                              </div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                {s.portalTeachers.map((t: any) => (
+                                  <span
+                                    key={t.id}
+                                    style={{
+                                      fontSize: '11.5px',
+                                      padding: '3px 8px',
+                                      borderRadius: '6px',
+                                      backgroundColor: isDark ? '#064e3b' : '#d1fae5',
+                                      color: isDark ? '#a7f3d0' : '#065f46',
+                                      fontWeight: 600,
+                                    }}
+                                  >
+                                    {t.teacherName || `${t.firstName || ''} ${t.surname || ''}`} · ID: {t.staffId} ·{' '}
+                                    {t.currentRank || 'Teacher'}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* 3. ENROLMENT */}
+        {tab === 'enrolment' && (() => {
+          const cls = CL.map((c, i) => {
+            const b = sum(schools.map(s => (s.cl || [])[2 * i] || 0));
+            const g = sum(schools.map(s => (s.cl || [])[2 * i + 1] || 0));
+            const r = sum(schools.map(s => (s.rc || [])[i] || 0));
+            return { c, b, g, r };
+          });
+          const types = Array.from(new Set(schools.map(s => s.type || 'UNSPECIFIED'))).sort();
+          const top = [...schools].sort((a, b) => pupils(b) - pupils(a)).slice(0, 10);
+          const maxP = top.length ? pupils(top[0]) : 1;
+          const crowded = schools.filter(s => s.rooms > 0 && pupils(s) / s.rooms > 45).length;
+          const totB = sum(cls.map(x => x.b)) || sum(schools.map(s => s.enr[0] + s.enr[2] + s.enr[4]));
+          const totG = sum(cls.map(x => x.g)) || sum(schools.map(s => s.enr[1] + s.enr[3] + s.enr[5]));
+
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <Kpis
+                isDark={isDark}
+                items={[
+                  ['Boys', totB.toLocaleString()],
+                  ['Girls', totG.toLocaleString()],
+                  ['Overall GPI', totB ? (totG / totB).toFixed(2) : '-'],
+                  ['Schools over 45 pupils/room', String(crowded)],
+                ]}
+              />
+
+              <Card
+                title="Enrolment by class"
+                isDark={isDark}
+                rightAction={
+                  <button
+                    onClick={() => setShowInteractiveEditor(v => !v)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      fontSize: '12px',
+                      padding: '5px 10px',
+                      borderRadius: '6px',
+                      border: 'none',
+                      backgroundColor: '#047857',
+                      color: '#fff',
+                      cursor: 'pointer',
+                      fontWeight: 600,
+                    }}
+                  >
+                    <Edit3 size={13} /> {showInteractiveEditor ? 'Hide School Enrolment Editor' : 'Edit School Enrolment'}
+                  </button>
+                }
+              >
+                {showInteractiveEditor && activeSchool && (
+                  <div
+                    style={{
+                      marginBottom: '16px',
+                      padding: '12px',
+                      borderRadius: '8px',
+                      backgroundColor: isDark ? '#0f172a' : '#f8fafc',
+                      border: `1px solid ${isDark ? '#334155' : '#cbd5e1'}`,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
+                      <strong style={{ fontSize: '13px' }}>Edit Enrolment for School:</strong>
+                      <select
+                        value={activeSchool.id}
+                        onChange={e => setSelectedSchoolId(e.target.value)}
+                        style={{
+                          padding: '6px 10px',
+                          borderRadius: '6px',
+                          backgroundColor: isDark ? '#1e293b' : '#fff',
+                          color: 'inherit',
+                          border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                        }}
+                      >
+                        {schools.map(s => (
+                          <option key={s.id} value={s.id}>
+                            {s.name} ({s.circuit})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', fontSize: '12.5px' }}>
+                      {(['KG', 'Primary', 'JHS'] as const).map((lvLabel, lvIdx) => {
+                        const bVal = activeSchool.enr[lvIdx * 2] || 0;
+                        const gVal = activeSchool.enr[lvIdx * 2 + 1] || 0;
+                        return (
+                          <div key={lvLabel} style={{ padding: '8px', borderRadius: '6px', border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}` }}>
+                            <div style={{ fontWeight: 700, marginBottom: '6px' }}>{lvLabel}</div>
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              <label>
+                                Boys:{' '}
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={bVal}
+                                  onChange={e => {
+                                    const nextEnr = [...activeSchool.enr];
+                                    nextEnr[lvIdx * 2] = Math.max(0, num(e.target.value));
+                                    saveSchoolPatch(activeSchool, { enr: nextEnr });
+                                  }}
+                                  style={{ width: '70px', padding: '4px', borderRadius: '4px', backgroundColor: isDark ? '#1e293b' : '#fff', color: 'inherit', border: '1px solid #64748b' }}
+                                />
+                              </label>
+                              <label>
+                                Girls:{' '}
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={gVal}
+                                  onChange={e => {
+                                    const nextEnr = [...activeSchool.enr];
+                                    nextEnr[lvIdx * 2 + 1] = Math.max(0, num(e.target.value));
+                                    saveSchoolPatch(activeSchool, { enr: nextEnr });
+                                  }}
+                                  style={{ width: '70px', padding: '4px', borderRadius: '4px', backgroundColor: isDark ? '#1e293b' : '#fff', color: 'inherit', border: '1px solid #64748b' }}
+                                />
+                              </label>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <Tbl
+                  isDark={isDark}
+                  cols={['Class', 'Boys', 'Girls', 'Total', 'GPI', 'Classrooms', 'Pupils/room']}
+                  rows={cls.map(x => [
+                    x.c,
+                    x.b,
+                    x.g,
+                    x.b + x.g,
+                    x.b ? (x.g / x.b).toFixed(2) : '-',
+                    x.r,
+                    x.r ? ((x.b + x.g) / x.r).toFixed(1) : '-',
+                  ])}
+                />
+              </Card>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px' }}>
+                <Card title="By school type" isDark={isDark}>
+                  <Tbl
+                    isDark={isDark}
+                    cols={['Type', 'Schools', 'Pupils', 'GPI']}
+                    rows={types.map(t => {
+                      const g = schools.filter(s => (s.type || 'UNSPECIFIED') === t);
+                      const b = sum(g.map(s => s.enr[0] + s.enr[2] + s.enr[4]));
+                      const gl = sum(g.map(s => s.enr[1] + s.enr[3] + s.enr[5]));
+                      return [t, g.length, b + gl, b ? (gl / b).toFixed(2) : '-'];
+                    })}
+                  />
+                </Card>
+
+                <Card title="Ten largest schools" isDark={isDark}>
+                  {top.map(s => (
+                    <Bar
+                      key={s.id || s.emis + s.name}
+                      label={s.name}
+                      value={pct(pupils(s), maxP)}
+                      note={String(pupils(s))}
+                      isDark={isDark}
+                    />
+                  ))}
+                </Card>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* 4. STAFFING */}
+        {tab === 'staffing' && (() => {
+          const T = (f: (s: any) => number) => sum(schools.map(f));
+          const dist = (k: string): [string, number][] => {
+            const m: Record<string, number> = {};
+            schools.forEach(s =>
+              Object.entries(tqo(s)[k] || {}).forEach(([a, b]) => {
+                m[a] = (m[a] || 0) + (b as number);
+              })
+            );
+            return Object.entries(m)
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 8);
+          };
+          const gaps = schools.map(s => ({ s, g: teachers(s) - Math.ceil(pupils(s) / target) }));
+          const deficit = -sum(gaps.filter(x => x.g < 0).map(x => x.g));
+          const surplus = sum(gaps.filter(x => x.g > 0).map(x => x.g));
+          const worst = [...gaps].sort((a, b) => a.g - b.g).slice(0, 12);
+          const M = T(s => tqo(s).M);
+          const F = T(s => tqo(s).F);
+
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <Kpis
+                isDark={isDark}
+                items={[
+                  ['Teachers (staff list / portal)', String(T(s => tqo(s).n))],
+                  ['Male / Female', M + ' / ' + F],
+                  ['Aged 55 and above', String(T(s => tqo(s).age[4] + tqo(s).age[5]))],
+                  ['Trained (census / portal)', pct(T(s => sum(s.trn || [])), T(teachers)) + '%'],
+                ]}
+              />
+
+              <Card title="Teacher deficit / surplus" isDark={isDark}>
+                <label
+                  style={{
+                    display: 'block',
+                    marginBottom: '10px',
+                    fontSize: '12.5px',
+                    color: isDark ? '#cbd5e1' : '#475569',
+                  }}
+                >
+                  Target pupil-teacher ratio{' '}
+                  <input
+                    type="number"
+                    min={10}
+                    max={80}
+                    value={target}
+                    onChange={e => setTarget(Math.max(10, num(e.target.value) || 35))}
+                    style={{
+                      width: '68px',
+                      borderRadius: '6px',
+                      border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                      padding: '4px 8px',
+                      backgroundColor: isDark ? '#0f172a' : '#fff',
+                      color: 'inherit',
+                      marginLeft: '6px',
+                    }}
+                  />
+                </label>
+                <p style={{ margin: '0 0 12px', fontSize: '13.5px' }}>
+                  Deficit: <b>{deficit}</b> teachers · Surplus: <b>{surplus}</b> teachers (required = pupils / target,
+                  rounded up per school)
+                </p>
+                <Tbl
+                  isDark={isDark}
+                  cols={['School', 'Circuit', 'Pupils', 'Teachers', 'Required', 'Gap']}
+                  rows={worst.map(x => [
+                    x.s.name,
+                    x.s.circuit,
+                    pupils(x.s),
+                    teachers(x.s),
+                    Math.ceil(pupils(x.s) / target),
+                    x.g,
+                  ])}
+                />
+              </Card>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px' }}>
+                <Dist
+                  title="Age profile (retirement forecast)"
+                  rows={AGE.map((l, i) => [l, T(s => tqo(s).age[i])] as [string, number])}
+                  isDark={isDark}
+                />
+                <Dist
+                  title="Years of service"
+                  rows={SVC.map((l, i) => [l, T(s => tqo(s).svc[i])] as [string, number])}
+                  isDark={isDark}
+                />
+                <Dist title="Professional qualification" rows={dist('prof')} isDark={isDark} />
+                <Dist title="Current rank" rows={dist('rank')} isDark={isDark} />
+                <Dist title="First subject taught" rows={dist('sub')} isDark={isDark} />
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* 5. FACILITIES */}
+        {tab === 'facilities' && (() => {
+          const wf = schools.filter(s => s.fac);
+          const cov = (k: string) => pct(wf.filter(s => s.fac[k]).length, wf.length);
+          const pc = sum(wf.map(s => s.fac.pc || 0));
+          const pw = sum(wf.map(pupils));
+          const seats = sum(wf.map(s => (s.fac.tM || 0) + (s.fac.tF || 0)));
+          const poor = COND.map((c, i) => {
+            const v = wf.map(s => (s.fac.cond || [])[i]).filter(x => x && x !== 'N/A');
+            return [c, pct(v.filter(x => x === 'POOR').length, v.length)] as [string, number];
+          });
+          const low = [...wf].sort((a, b) => score(a) - score(b)).slice(0, 10);
+
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <Kpis
+                isDark={isDark}
+                items={[
+                  ['Schools with facility data', String(wf.length)],
+                  ['Computers', String(pc)],
+                  ['Pupils per computer', pc ? (pw / pc).toFixed(1) : '-'],
+                  ['Pupils per toilet seat', seats ? (pw / seats).toFixed(1) : '-'],
+                ]}
+              />
+
+              <Card
+                title="Interactive school facility checklist & condition updater"
+                isDark={isDark}
+                rightAction={
+                  <button
+                    onClick={() => setShowInteractiveEditor(v => !v)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      fontSize: '12px',
+                      padding: '5px 10px',
+                      borderRadius: '6px',
+                      border: 'none',
+                      backgroundColor: '#047857',
+                      color: '#fff',
+                      cursor: 'pointer',
+                      fontWeight: 600,
+                    }}
+                  >
+                    <CheckCircle2 size={13} />{' '}
+                    {showInteractiveEditor ? 'Hide Checklist Editor' : 'Tick / Update School Facilities'}
+                  </button>
+                }
+              >
+                {showInteractiveEditor && activeSchool ? (
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                      <strong style={{ fontSize: '13px' }}>Select School:</strong>
+                      <select
+                        value={activeSchool.id}
+                        onChange={e => setSelectedSchoolId(e.target.value)}
+                        style={{
+                          padding: '6px 10px',
+                          borderRadius: '6px',
+                          backgroundColor: isDark ? '#0f172a' : '#fff',
+                          color: 'inherit',
+                          border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                        }}
+                      >
+                        {schools.map(s => (
+                          <option key={s.id} value={s.id}>
+                            {s.name} ({s.circuit})
+                          </option>
+                        ))}
+                      </select>
+                      <span style={{ fontSize: '12px', color: '#10b981', fontWeight: 700 }}>
+                        Core Score: {score(activeSchool)}/8
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(185px, 1fr))',
+                        gap: '8px',
+                        fontSize: '12.5px',
+                      }}
+                    >
+                      {[...FAC, ...FAC2].map(([k, l]) => {
+                        const checked = Boolean(activeSchool.fac && activeSchool.fac[k]);
+                        return (
+                          <label
+                            key={k}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              padding: '6px 10px',
+                              borderRadius: '6px',
+                              border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={e => {
+                                const nextFac = { ...(activeSchool.fac || {}), [k]: e.target.checked };
+                                saveSchoolPatch(activeSchool, { fac: nextFac });
+                              }}
+                            />
+                            {l}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '12.5px', color: isDark ? '#94a3b8' : '#64748b' }}>
+                    Click "Tick / Update School Facilities" to interactively update any school's facilities in real time.
+                  </div>
+                )}
+              </Card>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px' }}>
+                <Card title="Core facilities coverage" isDark={isDark}>
+                  {FAC.map(([k, l]) => (
+                    <Bar key={k} label={l} value={cov(k)} isDark={isDark} />
+                  ))}
+                </Card>
+                <Card title="Other facilities coverage" isDark={isDark}>
+                  {FAC2.map(([k, l]) => (
+                    <Bar key={k} label={l} value={cov(k)} isDark={isDark} />
+                  ))}
+                </Card>
+                <Card title="Classroom elements in poor condition" isDark={isDark}>
+                  {poor.map(([l, v]) => (
+                    <Bar key={l} label={l} value={v} isDark={isDark} />
+                  ))}
+                </Card>
+                <Card title="Weakest facility scores (out of 8)" isDark={isDark}>
+                  {low.map(s => (
+                    <Bar
+                      key={s.id || s.emis + s.name}
+                      label={s.name}
+                      value={(score(s) / 8) * 100}
+                      note={score(s) + '/8'}
+                      isDark={isDark}
+                    />
+                  ))}
+                </Card>
+              </div>
+
+              <Card title="Schools without sanitation or water" isDark={isDark}>
+                <p style={{ margin: 0, fontSize: '13.5px' }}>
+                  No toilets: <b>{wf.filter(s => !s.fac.toilet).length}</b> · No drinking water:{' '}
+                  <b>{wf.filter(s => !s.fac.water).length}</b> · No electricity:{' '}
+                  <b>{wf.filter(s => !s.fac.elec).length}</b>
+                </p>
+              </Card>
+            </div>
+          );
+        })()}
+
+        {/* 6. TEXTBOOKS */}
+        {tab === 'textbooks' && (() => {
+          const wb = schools.filter(s => s.tb);
+          const rows = TB.map((t, i) => {
+            const c = (st: string) => wb.filter(s => s.tb?.[i] === st).length;
+            const short = wb.filter(s => s.tb?.[i] === 'INADEQUATE' || s.tb?.[i] === 'NOT AVAILABLE');
+            return [
+              t,
+              c('ADEQUATE'),
+              c('INADEQUATE'),
+              c('NOT AVAILABLE'),
+              pct(c('ADEQUATE'), wb.length) + '%',
+              sum(short.map(pupils)).toLocaleString(),
+            ];
+          });
+          const wr = schools.filter(s => s.rec && s.rec[1]);
+
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <Kpis
+                isDark={isDark}
+                items={[
+                  ['Schools with textbook data', String(wb.length)],
+                  [
+                    'Record-keeping compliance',
+                    pct(sum(wr.map(s => s.rec[0])), sum(wr.map(s => s.rec[1]))) + '%',
+                  ],
+                ]}
+              />
+
+              <Card title="Textbook availability by subject" isDark={isDark}>
+                <Tbl
+                  isDark={isDark}
+                  cols={[
+                    'Subject',
+                    'Adequate',
+                    'Inadequate',
+                    'Not available',
+                    '% adequate',
+                    'Pupils in shortage schools',
+                  ]}
+                  rows={rows}
+                />
+              </Card>
+
+              <Card title="Ghanaian language and creative subjects" isDark={isDark}>
+                <Tbl
+                  isDark={isDark}
+                  cols={['Subject', 'Schools teaching', 'Teacher available']}
+                  rows={LANG.map((l, i) => [
+                    l,
+                    sum(schools.map(s => (s.lang || [])[2 * i] || 0)),
+                    sum(schools.map(s => (s.lang || [])[2 * i + 1] || 0)),
+                  ])}
+                />
+              </Card>
+            </div>
+          );
+        })()}
+
+        {/* 7. REPORTS (7 Official Directorate Reports + Excel & PDF Export) */}
+        {tab === 'reports' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+              {reps.map(x => {
+                const active = x.id === activeReport.id;
+                return (
+                  <button
+                    key={x.id}
+                    onClick={() => setReportId(x.id)}
+                    style={{
+                      borderRadius: '6px',
+                      border: `1px solid ${active ? '#047857' : isDark ? '#475569' : '#cbd5e1'}`,
+                      backgroundColor: active ? '#047857' : 'transparent',
+                      color: active ? '#ffffff' : isDark ? '#e2e8f0' : '#334155',
+                      padding: '6px 12px',
+                      fontSize: '12.5px',
+                      fontWeight: active ? 700 : 500,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {x.title}
+                  </button>
+                );
+              })}
+            </div>
+
+            <Card title={`${activeReport.title} (${activeReport.rows.length} rows)`} isDark={isDark}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '14px' }}>
+                <button
+                  onClick={handleDownloadSingleReportExcel}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    borderRadius: '6px',
+                    backgroundColor: '#047857',
+                    color: '#fff',
+                    border: 'none',
+                    padding: '7px 14px',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Download size={14} /> Download Excel ({activeReport.title})
+                </button>
+                <button
+                  onClick={handleDownloadAllReportsWorkbook}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    borderRadius: '6px',
+                    backgroundColor: '#0f766e',
+                    color: '#fff',
+                    border: 'none',
+                    padding: '7px 14px',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Download size={14} /> Download All 7 Reports (.xlsx)
+                </button>
+                <button
+                  onClick={handlePrintReportPdf}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    borderRadius: '6px',
+                    border: `1px solid ${isDark ? '#475569' : '#94a3b8'}`,
+                    backgroundColor: 'transparent',
+                    color: isDark ? '#e2e8f0' : '#334155',
+                    padding: '7px 14px',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Printer size={14} /> Print / Save as PDF
                 </button>
               </div>
 
-              {/* Filter row */}
-              <div className="edms-row">
+              <div style={{ maxHeight: '460px', overflowY: 'auto' }}>
+                <Tbl isDark={isDark} cols={activeReport.cols} rows={activeReport.rows.slice(0, 200)} />
+              </div>
+              {activeReport.rows.length > 200 && (
+                <p style={{ marginTop: '8px', fontSize: '12px', color: isDark ? '#94a3b8' : '#64748b' }}>
+                  Preview shows 200 rows; downloads include all {activeReport.rows.length} rows.
+                </p>
+              )}
+            </Card>
+          </div>
+        )}
+
+        {/* 8. IMPORT (Matches uploaded screenshot + Duplicate Prevention) */}
+        {tab === 'import' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <Card title="Import census workbook (.xlsx)" isDark={isDark}>
+              <p
+                style={{
+                  margin: '0 0 12px',
+                  fontSize: '12.5px',
+                  color: isDark ? '#94a3b8' : '#64748b',
+                }}
+              >
+                Reads Basic Info, Enrolment, Teaching Staff, Facilities and Books Records. Includes automatic duplicate
+                checking by School Name and EMIS code to avoid data redundancy.
+              </p>
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', marginBottom: '14px' }}>
                 <input
-                  placeholder="Search name or EMIS code"
-                  value={q}
-                  onChange={e => setQ(e.target.value)}
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={e => setFile(e.target.files ? e.target.files[0] : null)}
+                  style={{ fontSize: '13.5px', color: isDark ? '#e2e8f0' : '#1e293b' }}
                 />
-                <select value={cir} onChange={e => setCir(e.target.value)}>
-                  {['All', ...CIR].map(c => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
+
+                <label style={{ fontSize: '12.5px', color: isDark ? '#cbd5e1' : '#475569', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  Import mode:
+                  <select
+                    value={importMode}
+                    onChange={e => setImportMode(e.target.value as 'merge' | 'replace')}
+                    style={{
+                      padding: '5px 8px',
+                      borderRadius: '6px',
+                      backgroundColor: isDark ? '#0f172a' : '#fff',
+                      color: 'inherit',
+                      border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                    }}
+                  >
+                    <option value="merge">Smart Merge & Skip Duplicates (Recommended)</option>
+                    <option value="replace">Replace All Existing Census Data</option>
+                  </select>
+                </label>
               </div>
 
-              <div className="edms-card edms-tw">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>School</th>
-                      <th>EMIS</th>
-                      <th>Ownership</th>
-                      <th>Circuit</th>
-                      <th>Head teacher</th>
-                      <th className="n">Learners</th>
-                      <th className="n">Portal Staff</th>
-                      <th>Status</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredSchools.length > 0 ? (
-                      filteredSchools.map(s => (
-                        <tr key={s.id}>
-                          <td>{s.name}</td>
-                          <td>{s.code}</td>
-                          <td>{s.own}</td>
-                          <td>{s.circuit}</td>
-                          <td>{s.head}</td>
-                          <td className="n">{f1(tot(s))}</td>
-                          <td className="n">{s.portalTeachersCount}</td>
-                          <td>
-                            <span className={`edms-tag ${s.status === 'Verified' ? 'ok' : 'am'}`}>
-                              {s.status}
-                            </span>
-                          </td>
-                          <td>
-                            {s.status !== 'Verified' && (
-                              <button className="g" onClick={() => handleVerify(s)}>
-                                Verify
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={9}>No schools match. Clear the search or change the circuit.</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
+              <button
+                disabled={!file || busy}
+                onClick={handleImportWorkbook}
+                style={{
+                  borderRadius: '6px',
+                  backgroundColor: '#047857',
+                  color: '#ffffff',
+                  border: 'none',
+                  padding: '8px 16px',
+                  fontSize: '13.5px',
+                  fontWeight: 600,
+                  cursor: !file || busy ? 'not-allowed' : 'pointer',
+                  opacity: !file || busy ? 0.45 : 1,
+                }}
+              >
+                {busy ? 'Importing workbook...' : 'Import workbook'}
+              </button>
+            </Card>
 
-          {/* 3. ENROLMENT */}
-          {page === 'enrol' && activeSchool && (
-            <>
-              <div className="edms-top">
-                <div>
-                  <h1>Enrolment</h1>
-                  <p>Totals and checks update as you type and sync automatically</p>
-                </div>
-              </div>
-              {renderPicker()}
-              <div className="edms-card edms-tw">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Level</th>
-                      <th className="n">Boys</th>
-                      <th className="n">Girls</th>
-                      <th className="n">Total</th>
-                      <th className="n">Classes</th>
-                      <th className="n">Avg class size</th>
-                      <th>Check</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {LV.map(([k, n, c]) => {
-                      const [b, g] = activeSchool.enr[k] || [0, 0];
-                      const t = b + g;
-                      const av = t / c;
-                      const w =
-                        t && (g / (b || 1) < 0.6 || g / (b || 1) > 1.6)
-                          ? 'Gender ratio looks unusual'
-                          : av > 45
-                          ? 'Class size above 45'
-                          : '';
-                      return (
-                        <tr key={k}>
-                          <td>{n}</td>
-                          <td className="n">
-                            <input
-                              type="number"
-                              min={0}
-                              value={b}
-                              onChange={e => handleSetEnrol(activeSchool, k, 0, e.target.value)}
-                            />
-                          </td>
-                          <td className="n">
-                            <input
-                              type="number"
-                              min={0}
-                              value={g}
-                              onChange={e => handleSetEnrol(activeSchool, k, 1, e.target.value)}
-                            />
-                          </td>
-                          <td className="n">{t}</td>
-                          <td className="n">{c}</td>
-                          <td className="n">{av.toFixed(1)}</td>
-                          <td>
-                            {w ? (
-                              <span className="edms-tag bad">{w}</span>
-                            ) : (
-                              <span className="edms-tag ok">OK</span>
-                            )}
-                          </td>
-                        </tr>
+            <Card title="Other data actions" isDark={isDark}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                <button
+                  disabled={busy}
+                  onClick={async () => {
+                    setBusy(true);
+                    try {
+                      const res = await saveBulkSchoolsToFirestore(SAMPLE, 'merge', setImportMsg);
+                      setImportMsg(
+                        `Sample schools loaded (${res.addedCount} added, ${res.updatedCount} updated without duplicates).`
                       );
-                    })}
-                    <tr>
-                      <th>All levels</th>
-                      <th className="n">{boys(activeSchool)}</th>
-                      <th className="n">{girls(activeSchool)}</th>
-                      <th className="n">{tot(activeSchool)}</th>
-                      <th></th>
-                      <th></th>
-                      <th>
-                        GPI {(girls(activeSchool) / (boys(activeSchool) || 1)).toFixed(2)}
-                      </th>
-                    </tr>
-                  </tbody>
-                </table>
+                    } catch (e: any) {
+                      setImportMsg('Failed: ' + (e?.message || 'error'));
+                    }
+                    setBusy(false);
+                  }}
+                  style={{
+                    borderRadius: '6px',
+                    border: `1px solid ${isDark ? '#475569' : '#94a3b8'}`,
+                    backgroundColor: 'transparent',
+                    color: isDark ? '#e2e8f0' : '#334155',
+                    padding: '8px 14px',
+                    fontSize: '13.5px',
+                    cursor: busy ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  Load sample data
+                </button>
+
+                {!confirmClear ? (
+                  <button
+                    disabled={busy}
+                    onClick={() => setConfirmClear(true)}
+                    style={{
+                      borderRadius: '6px',
+                      border: '1px solid #ef4444',
+                      backgroundColor: 'transparent',
+                      color: '#ef4444',
+                      padding: '8px 14px',
+                      fontSize: '13.5px',
+                      cursor: busy ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    Clear all census school data
+                  </button>
+                ) : (
+                  <button
+                    disabled={busy}
+                    onClick={async () => {
+                      setConfirmClear(false);
+                      setBusy(true);
+                      try {
+                        await Promise.all(schoolsData.map((s: any) => deleteDoc(doc(db, 'schools', s.id))));
+                        setImportMsg('All school census records cleared.');
+                      } catch (e: any) {
+                        setImportMsg('Failed: ' + (e?.message || 'error'));
+                      }
+                      setBusy(false);
+                    }}
+                    style={{
+                      borderRadius: '6px',
+                      border: 'none',
+                      backgroundColor: '#dc2626',
+                      color: '#ffffff',
+                      padding: '8px 14px',
+                      fontSize: '13.5px',
+                      fontWeight: 600,
+                      cursor: busy ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    Confirm clear all
+                  </button>
+                )}
               </div>
-            </>
-          )}
+            </Card>
 
-          {/* 4. TEACHING STAFF (Mapped to Submitted Teacher Records) */}
-          {page === 'staff' && (
-            <>
-              <div className="edms-top">
-                <div>
-                  <h1>Teaching staff</h1>
-                  <p>
-                    Establishment, deficit or surplus, and qualification mix mapped directly from submitted records
-                  </p>
-                </div>
+            {importMsg && (
+              <div
+                style={{
+                  padding: '12px 16px',
+                  borderRadius: '8px',
+                  backgroundColor: isDark ? '#1e293b' : '#ffffff',
+                  border: `1px solid ${isDark ? '#334155' : '#cbd5e1'}`,
+                  fontSize: '13.5px',
+                }}
+              >
+                {importMsg}
               </div>
-              <div className="edms-card edms-tw">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>School</th>
-                      <th>Circuit</th>
-                      <th className="n">Learners</th>
-                      <th className="n">Teachers (Portal)</th>
-                      <th className="n">Required</th>
-                      <th>Position</th>
-                      <th className="n">PTR</th>
-                      <th className="n">Professionally qualified</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {S.map(s => {
-                      const g = gap(s);
-                      const qPct = s.teachers[0] ? Math.round((s.teachers[1] / s.teachers[0]) * 100) : 0;
-                      const schoolSubmittedTeachers = teachersBySchool[normalizeKey(s.name)] || [];
-                      const isExpanded = expandedSchoolStaff === s.id;
+            )}
+          </div>
+        )}
+      </main>
 
-                      return (
-                        <React.Fragment key={s.id}>
-                          <tr>
-                            <td>{s.name}</td>
-                            <td>{s.circuit}</td>
-                            <td className="n">{f1(tot(s))}</td>
-                            <td className="n">
-                              <b>{s.teachers[0]}</b>{' '}
-                              <span className="edms-note">({s.portalTeachersCount} submitted)</span>
-                            </td>
-                            <td className="n">{req(s)}</td>
-                            <td>
-                              <span className={`edms-tag ${g > 0 ? 'bad' : g < 0 ? 'am' : 'ok'}`}>
-                                {g > 0 ? `Deficit ${g}` : g < 0 ? `Surplus ${-g}` : 'Balanced'}
-                              </span>
-                            </td>
-                            <td className="n">
-                              {s.teachers[0] ? (tot(s) / s.teachers[0]).toFixed(1) : '–'}
-                            </td>
-                            <td className="n">{qPct}%</td>
-                            <td>
-                              {schoolSubmittedTeachers.length > 0 && (
-                                <button
-                                  className="g"
-                                  onClick={() =>
-                                    setExpandedSchoolStaff(isExpanded ? null : s.id)
-                                  }
-                                >
-                                  {isExpanded ? 'Hide staff' : `View ${schoolSubmittedTeachers.length} staff`}
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                          {isExpanded && (
-                            <tr>
-                              <td colSpan={9} style={{ background: 'var(--bg)', padding: '12px 16px' }}>
-                                <div style={{ fontWeight: 600, marginBottom: '6px', fontSize: '13px' }}>
-                                  Submitted Teachers at {s.name} ({schoolSubmittedTeachers.length})
-                                </div>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                                  {schoolSubmittedTeachers.map((t: any) => (
-                                    <span
-                                      key={t.id}
-                                      className="edms-tag ok"
-                                      style={{ padding: '4px 10px' }}
-                                    >
-                                      {t.teacherName || `${t.firstName || ''} ${t.surname || ''}`} · ID:{' '}
-                                      {t.staffId} · {t.currentRank || 'Teacher'}
-                                    </span>
-                                  ))}
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </React.Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-
-          {/* 5. FACILITIES */}
-          {page === 'fac' && activeSchool && (() => {
-            const miss = FAC.filter(f => !activeSchool.fac[f]);
-            return (
-              <>
-                <div className="edms-top">
-                  <div>
-                    <h1>Facilities</h1>
-                    <p>Tick what the school has; the score and gap list follow</p>
-                  </div>
-                </div>
-                {renderPicker()}
-                <div className="edms-grid">
-                  <div className="edms-card">
-                    <h3>Checklist · {fscore(activeSchool)}% complete</h3>
-                    <div className="edms-chk">
-                      {FAC.map(f => (
-                        <label key={f}>
-                          <input
-                            type="checkbox"
-                            checked={Boolean(activeSchool.fac[f])}
-                            onChange={e => handleSetFacility(activeSchool, f, e.target.checked)}
-                          />
-                          {f}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="edms-card">
-                    <h3>Gap analysis</h3>
-                    {miss.length ? (
-                      <>
-                        <p className="edms-note">
-                          {miss.length} items missing. Include in the improvement plan:
-                        </p>
-                        <ul>
-                          {miss.map(f => (
-                            <li key={f}>{f}</li>
-                          ))}
-                        </ul>
-                      </>
-                    ) : (
-                      <p>No gaps recorded for this school.</p>
-                    )}
-                    <h3 style={{ marginTop: '14px' }}>ICT readiness</h3>
-                    <p style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                      {['ICT lab', 'Electricity', 'Internet'].map(f => (
-                        <span
-                          key={f}
-                          className={`edms-tag ${activeSchool.fac[f] ? 'ok' : 'bad'}`}
-                        >
-                          {f}
-                        </span>
-                      ))}
-                    </p>
-                  </div>
-                </div>
-              </>
-            );
-          })()}
-
-          {/* 6. TEXTBOOKS */}
-          {page === 'books' && activeSchool && (
-            <>
-              <div className="edms-top">
-                <div>
-                  <h1>Textbooks</h1>
-                  <p>Required against available, with the shortage to procure</p>
-                </div>
-              </div>
-              {renderPicker()}
-              <div className="edms-card edms-tw">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Subject</th>
-                      <th className="n">Required</th>
-                      <th className="n">Available</th>
-                      <th className="n">Shortage</th>
-                      <th>Coverage</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {SUBJ.map(k => {
-                      const [r, a] = activeSchool.books[k] || [0, 0];
-                      const sh = Math.max(0, r - a);
-                      const p = Math.min(100, Math.round((a / (r || 1)) * 100));
-                      return (
-                        <tr key={k}>
-                          <td>{k}</td>
-                          <td className="n">
-                            <input
-                              type="number"
-                              min={0}
-                              value={r}
-                              onChange={e => handleSetBooks(activeSchool, k, 0, e.target.value)}
-                            />
-                          </td>
-                          <td className="n">
-                            <input
-                              type="number"
-                              min={0}
-                              value={a}
-                              onChange={e => handleSetBooks(activeSchool, k, 1, e.target.value)}
-                            />
-                          </td>
-                          <td className="n">
-                            {sh ? <span className="edms-tag bad">{sh}</span> : '0'}
-                          </td>
-                          <td style={{ width: '30%' }}>
-                            <div className="edms-bar">
-                              <i style={{ width: `${p}%` }} />
-                            </div>{' '}
-                            {p}%
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-
-          {/* 7. REPORTS */}
-          {page === 'rep' && (() => {
-            const tb = S.map(s => ({
-              s,
-              short: SUBJ.reduce(
-                (a, k) => a + Math.max(0, (s.books[k]?.[0] || 0) - (s.books[k]?.[1] || 0)),
-                0
-              ),
-            }));
-            return (
-              <>
-                <div className="edms-top">
-                  <div>
-                    <h1>Reports</h1>
-                    <p>School census summary, ready to paste into Excel or download as .xlsx</p>
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button className="b" onClick={handleCopyCsv}>
-                      Copy census as CSV
-                    </button>
-                    <button className="g" onClick={handleExportWorkbook}>
-                      Export .xlsx workbook
-                    </button>
-                  </div>
-                </div>
-
-                <div className="edms-grid">
-                  <div className="edms-card" style={{ gridColumn: '1 / -1' }}>
-                    <h3>School census report</h3>
-                    <div className="edms-tw">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>School</th>
-                            <th>Circuit</th>
-                            <th className="n">Boys</th>
-                            <th className="n">Girls</th>
-                            <th className="n">Teachers</th>
-                            <th className="n">Facilities</th>
-                            <th className="n">Books</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {S.map(s => (
-                            <tr key={s.id}>
-                              <td>{s.name}</td>
-                              <td>{s.circuit}</td>
-                              <td className="n">{boys(s)}</td>
-                              <td className="n">{girls(s)}</td>
-                              <td className="n">{s.teachers[0]}</td>
-                              <td className="n">{fscore(s)}%</td>
-                              <td className="n">{Math.round(bratio(s) * 100)}%</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  <div className="edms-card">
-                    <h3>Procurement: textbook shortages</h3>
-                    <p className="edms-note">
-                      Total copies to buy: <b>{f1(sum(tb.map(x => x.short)))}</b>
-                    </p>
-                  </div>
-
-                  <div className="edms-card">
-                    <h3>Staffing</h3>
-                    <p className="edms-note">
-                      Teachers needed to meet the 35:1 norm:{' '}
-                      <b>{sum(S.map(s => Math.max(0, gap(s))))}</b>. Surplus posts:{' '}
-                      <b>{sum(S.map(s => Math.max(0, -gap(s))))}</b>.
-                    </p>
-                  </div>
-                </div>
-              </>
-            );
-          })()}
-
-          {toastMsg && (
-            <div className="edms-toast" role="status">
-              {toastMsg}
-            </div>
-          )}
-        </main>
-      </div>
+      {toastMsg && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '20px',
+            right: '20px',
+            backgroundColor: '#047857',
+            color: '#fff',
+            padding: '10px 16px',
+            borderRadius: '8px',
+            fontSize: '13px',
+            fontWeight: 600,
+            boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
+            zIndex: 9999,
+          }}
+        >
+          {toastMsg}
+        </div>
+      )}
     </div>
   );
 }
