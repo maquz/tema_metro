@@ -99,14 +99,60 @@ const inc = (o: Record<string, number>, k: string) => {
 };
 const yr = (v: any) => {
   if (!v) return 0;
-  const d =
-    v instanceof Date
-      ? v
-      : typeof v === 'number'
-      ? new Date(Math.round((v - 25569) * 86400000))
-      : new Date(txt(v));
+  if (v instanceof Date) {
+    const y = v.getFullYear();
+    return isNaN(y) || y < 1900 ? 0 : y;
+  }
+  if (typeof v === 'number') {
+    if (v >= 1900 && v <= 2100) return Math.round(v);
+    const d = new Date(Math.round((v - 25569) * 86400000));
+    const y = d.getFullYear();
+    return isNaN(y) || y < 1900 ? 0 : y;
+  }
+  const s = txt(v);
+  const d = new Date(s);
   const y = d.getFullYear();
-  return isNaN(y) || y < 1900 ? 0 : y;
+  if (!isNaN(y) && y >= 1900 && y <= 2100) return y;
+  const m = s.match(/\b(19\d{2}|20\d{2})\b/);
+  return m ? parseInt(m[1], 10) : 0;
+};
+
+// Standardize circuit spelling variations across workbook imports and portal submissions
+const canonicalCircuit = (raw: any): string => {
+  const s = txt(raw).toUpperCase().replace(/\s+/g, ' ').trim();
+  if (!s) return 'ASHAMANG';
+  const n = s.replace(/[^A-Z0-9]/g, '');
+  if (n.includes('ASHAMANG') || n.includes('ASHAIMANG')) return 'ASHAMANG';
+  if (n.includes('AWUDUM')) return 'AWUDUM';
+  if (n.includes('11') && n.includes('REDEMPTION')) return 'COMMUNITY 11/REDEMPTION VALLEY';
+  if (n.includes('7') && n.includes('REPUBLIC')) return 'COMMUNITY 7/REPUBLIC ROAD';
+  if (n === 'COMMUNITY8' || n === 'COMM8') return 'COMMUNITY 8';
+  if (n.includes('ONINKU') || n.includes('MANTEDIN')) return 'ONINKU/MANTE-DIN';
+  if (n.includes('TWEDAASE') || n.includes('TWEDASE')) return 'TWEDAASE';
+  return s;
+};
+
+// Canonical school matching key so slight naming variations (e.g. "SCHOOL" suffix, "R/C", "ARCH BISHOP") map cleanly
+const schoolMatchKey = (raw: any): string => {
+  let s = txt(raw).toUpperCase();
+  if (!s) return '';
+  s = s
+    .replace(/\bNII\s+ADJETEY\s+ANSAH\s+MEMORIAL\b/g, 'ADJETEY ANSAH')
+    .replace(/\bADJETEY\s+ANSAH\s+MEMORIAL\b/g, 'ADJETEY ANSAH')
+    .replace(/\bARCH\s+BISHOP\b/g, 'ARCHBISHOP')
+    .replace(/\bROMAN\s+CATHOLIC\b/g, '')
+    .replace(/\bR\s*\/\s*C\b/g, '')
+    .replace(/\bM\s*\/\s*A\b/g, 'MA')
+    .replace(/\bT\s*\/\s*M\b/g, 'TM')
+    .replace(/\bPRESBYTERIAN\b/g, 'PRESBY')
+    .replace(/\bMETHODIST\b/g, 'METH')
+    .replace(/\bANGLICAN\b/g, 'ANG')
+    .replace(/\bPRIMARY\b/g, 'PRI')
+    .replace(/\bJUNIOR\s+HIGH\s+SCHOOL\b/g, 'JHS')
+    .replace(/\bJUNIOR\s+HIGH\b/g, 'JHS')
+    .replace(/\bSCHOOLS?\b/g, '')
+    .replace(/[^A-Z0-9]/g, '');
+  return s || norm(raw);
 };
 
 const pupils = (s: any) => sum(s.enr || []);
@@ -197,14 +243,16 @@ function parseOfficialCensusWorkbook(wb: XLSX.WorkBook) {
           rank: {},
           prof: {},
           sub: {},
+          retiringList: [] as any[],
+          staffList: [] as any[],
         };
         a.n++;
         const sex = txt(r[12]).toUpperCase();
         if (sex.startsWith('M')) a.M++;
         else if (sex.startsWith('F')) a.F++;
         const by = yr(r[11]);
+        const g = by ? NOW - by : 0;
         if (by) {
-          const g = NOW - by;
           a.age[g < 30 ? 0 : g < 40 ? 1 : g < 50 ? 2 : g < 55 ? 3 : g < 60 ? 4 : 5]++;
         }
         const fy = yr(r[26]);
@@ -212,9 +260,38 @@ function parseOfficialCensusWorkbook(wb: XLSX.WorkBook) {
           const v = NOW - fy;
           a.svc[v < 5 ? 0 : v < 15 ? 1 : v < 25 ? 2 : 3]++;
         }
-        inc(a.rank, txt(r[14]).toUpperCase() || 'UNSPECIFIED');
-        inc(a.prof, txt(r[27]).toUpperCase() || 'UNSPECIFIED');
-        inc(a.sub, txt(r[23]).toUpperCase() || 'UNSPECIFIED');
+        const rnk = txt(r[14]).toUpperCase() || 'UNSPECIFIED';
+        const prf = txt(r[27]).toUpperCase() || 'UNSPECIFIED';
+        const sbj = txt(r[23]).toUpperCase() || 'UNSPECIFIED';
+        inc(a.rank, rnk);
+        inc(a.prof, prf);
+        inc(a.sub, sbj);
+
+        // Extract individual teacher name & staffId from columns r[4]..r[10]
+        const rawCols = [r[4], r[5], r[6], r[7], r[8], r[9], r[10]].map(txt).filter(Boolean);
+        const nameTokens = rawCols.filter(
+          c => /^[A-Za-z.\-\s']+$/.test(c) && c.length > 1 && !/^(MALE|FEMALE|M|F|YES|NO)$/i.test(c)
+        );
+        const staffIdToken = rawCols.find(c => /\d{3,}/.test(c)) || '';
+        const teacherName = nameTokens.join(' ').replace(/\s+/g, ' ').trim().toUpperCase() || `STAFF #${a.n}`;
+
+        const staffEntry = {
+          name: teacherName,
+          staffId: staffIdToken,
+          sex: sex.startsWith('M') ? 'MALE' : sex.startsWith('F') ? 'FEMALE' : '-',
+          age: g,
+          dob: by ? String(by) : txt(r[11]),
+          retireYear: by ? by + 60 : '',
+          yearsLeft: g ? Math.max(0, 60 - g) : null,
+          rank: rnk,
+          prof: prf,
+          subject: sbj,
+          source: 'Census',
+        };
+        a.staffList.push(staffEntry);
+        if (g >= 55) {
+          a.retiringList.push(staffEntry);
+        }
         tmap.set(k, a);
       });
   }
@@ -583,6 +660,7 @@ interface KpisProps {
   validSubmissions?: any[];
   target?: number;
   onInspectSchool?: (school: any) => void;
+  onEditSchool?: (school: any) => void;
 }
 
 function Kpis({
@@ -592,6 +670,7 @@ function Kpis({
   validSubmissions = [],
   target = 35,
   onInspectSchool,
+  onEditSchool,
 }: KpisProps) {
   const [selectedKey, setSelectedKey] = useState<string>('');
   const [viewMode, setViewMode] = useState<'cards' | 'table' | 'chart'>('cards');
@@ -1433,45 +1512,90 @@ function Kpis({
 
       return {
         title: 'Retirement Forecast (Teachers Aged 55 & Above)',
-        subtitle: 'Teachers approaching compulsory retirement age (55–59 and 60+) by school and circuit',
+        subtitle:
+          'Full school details alongside the names, Staff IDs, ages, and retirement years of teachers aged 55 and above',
         hasPortalToggle: false,
         summaryPills: [
           ['Total Aged 55+', String(tot55_59 + tot60Plus)],
           ['Aged 55 - 59 (Retiring in <=5 yrs)', String(tot55_59)],
           ['Aged 60+ (Due Now)', String(tot60Plus)],
-          ['Schools Affected', String(filteredSchools.filter(s => (tqo(s).age?.[4] || 0) + (tqo(s).age?.[5] || 0) > 0).length)],
+          [
+            'Schools Affected',
+            String(filteredSchools.filter(s => (tqo(s).age?.[4] || 0) + (tqo(s).age?.[5] || 0) > 0).length),
+          ],
         ] as [string, string][],
         tableCols: [
+          'EMIS Code',
           'School Name',
           'Circuit',
+          'Ownership',
+          'Levels',
+          'Head Teacher',
+          'Phone',
+          'Pupils',
           'Total Teachers',
           'Aged 50-54',
           'Aged 55-59',
           'Aged 60+',
-          'Total Aged 55+',
+          'Total 55+',
+          'Names of Teachers Going on Retirement (Aged 55+)',
         ],
         tableRows: sorted.map(s => {
           const a4 = tqo(s).age?.[4] || 0;
           const a5 = tqo(s).age?.[5] || 0;
-          return [s.name, s.circuit, teachers(s), tqo(s).age?.[3] || 0, a4, a5, a4 + a5];
+          const rList: any[] = s.retiringTeachers || [];
+          const namesStr =
+            rList.length > 0
+              ? rList
+                  .map(
+                    t =>
+                      `${t.name}${t.staffId ? ` (ID: ${t.staffId})` : ''}${
+                        t.age ? ` - Age ${t.age}, Retires ${t.retireYear || ''}` : ''
+                      }${t.rank ? ` [${t.rank}]` : ''}`
+                  )
+                  .join(' | ')
+              : a4 + a5 > 0
+              ? `${a4 + a5} teacher(s) in census count (click Edit School to enter/confirm names)`
+              : 'None';
+          return [
+            s.emis || '-',
+            s.name,
+            s.circuit,
+            s.type || 'PUBLIC',
+            s.levels || '-',
+            s.head || '-',
+            s.phone || '-',
+            pupils(s),
+            teachers(s),
+            tqo(s).age?.[3] || 0,
+            a4,
+            a5,
+            a4 + a5,
+            namesStr,
+          ];
         }),
         cards: sorted.map(s => {
           const a4 = tqo(s).age?.[4] || 0;
           const a5 = tqo(s).age?.[5] || 0;
           const tot = a4 + a5;
+          const rList: any[] = s.retiringTeachers || [];
           return {
             id: s.id || s.emis + s.name,
             school: s,
             title: s.name,
             badge: `${tot} Aged 55+`,
             badgeColor: tot > 0 ? '#d97706' : '#059669',
-            meta: `${s.circuit} · ${teachers(s)} total teachers`,
+            meta: `EMIS: ${s.emis || '-'} · ${s.circuit} · ${s.type || 'PUBLIC'} · ${s.levels || 'Basic'}`,
             stats: [
-              ['Aged 55 - 59', String(a4)],
-              ['Aged 60+', String(a5)],
-              ['Aged 50 - 54', String(tqo(s).age?.[3] || 0)],
-              ['Total Staff', String(teachers(s))],
+              ['Head Teacher', s.head || 'Not assigned'],
+              ['Phone / Contact', s.phone || s.email || '-'],
+              ['Pupils & Rooms', `${pupils(s).toLocaleString()} pupils · ${s.rooms || 0} rooms`],
+              ['Total Staff & PTR', `${teachers(s)} tch (${s.portalTeachers?.length || 0} portal) · PTR ${ptr(s) ? ptr(s).toFixed(1) : '-'}`],
+              ['Aged 55 - 59', `${a4} (Retiring <=5 yrs)`],
+              ['Aged 60+ / 50-54', `${a5} (60+) · ${tqo(s).age?.[3] || 0} (50-54)`],
             ] as [string, string][],
+            retiringList: rList,
+            expectedRetiringCount: tot,
             footer: tot > 0 ? `${tot} replacement teacher(s) needed within 5 years` : 'No immediate retirements due',
             progress: pct(tot, Math.max(1, teachers(s))),
           };
@@ -2030,25 +2154,25 @@ function Kpis({
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(275px, 1fr))',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
                 gap: '12px',
-                maxHeight: '540px',
+                maxHeight: '620px',
                 overflowY: 'auto',
                 paddingRight: '4px',
               }}
             >
-              {drilldown.cards.map(card => (
+              {drilldown.cards.map((card: any) => (
                 <div
                   key={card.id}
                   style={{
                     borderRadius: '10px',
                     border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
                     backgroundColor: isDark ? '#1e293b' : '#f8fafc',
-                    padding: '12px 14px',
+                    padding: '13px 15px',
                     display: 'flex',
                     flexDirection: 'column',
                     justifyContent: 'space-between',
-                    gap: '8px',
+                    gap: '9px',
                   }}
                 >
                   <div>
@@ -2075,7 +2199,7 @@ function Kpis({
                     </div>
                   </div>
 
-                  {/* 2x2 Mini Stats Grid inside Card */}
+                  {/* Stats Grid inside Card */}
                   <div
                     style={{
                       display: 'grid',
@@ -2088,13 +2212,81 @@ function Kpis({
                       fontSize: '11.5px',
                     }}
                   >
-                    {card.stats.map(([stK, stV]) => (
+                    {card.stats.map(([stK, stV]: [string, string]) => (
                       <div key={stK}>
                         <div style={{ color: isDark ? '#94a3b8' : '#64748b', fontSize: '10.5px' }}>{stK}</div>
-                        <div style={{ fontWeight: 700, color: isDark ? '#e2e8f0' : '#1e293b' }}>{stV}</div>
+                        <div style={{ fontWeight: 700, color: isDark ? '#e2e8f0' : '#1e293b', wordBreak: 'break-word' }}>
+                          {stV}
+                        </div>
                       </div>
                     ))}
                   </div>
+
+                  {/* Retiring Teachers Names Section (for Retirement Forecast / Aged 55+ View) */}
+                  {card.retiringList !== undefined && (
+                    <div
+                      style={{
+                        borderRadius: '8px',
+                        padding: '8px 10px',
+                        backgroundColor: isDark ? 'rgba(217, 119, 6, 0.12)' : '#fffbeb',
+                        border: `1px solid ${isDark ? 'rgba(245, 158, 11, 0.35)' : '#fde68a'}`,
+                        fontSize: '11.5px',
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontWeight: 700,
+                          color: isDark ? '#fbbf24' : '#b45309',
+                          marginBottom: '5px',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <span>Teachers Going on Retirement (55+):</span>
+                        <span>{card.retiringList.length} named</span>
+                      </div>
+                      {card.retiringList.length > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                          {card.retiringList.map((rt: any, rIdx: number) => (
+                            <div
+                              key={rIdx}
+                              style={{
+                                padding: '5px 7px',
+                                borderRadius: '6px',
+                                backgroundColor: isDark ? '#0f172a' : '#ffffff',
+                                border: `1px solid ${isDark ? '#334155' : '#fde68a'}`,
+                              }}
+                            >
+                              <div style={{ fontWeight: 700, color: isDark ? '#f8fafc' : '#0f172a' }}>
+                                {rIdx + 1}. {rt.name}{' '}
+                                {rt.staffId && (
+                                  <span style={{ color: '#10b981', fontWeight: 600 }}>· ID: {rt.staffId}</span>
+                                )}
+                              </div>
+                              <div style={{ fontSize: '10.5px', color: isDark ? '#cbd5e1' : '#475569', marginTop: '1px' }}>
+                                {rt.age ? `Age: ${rt.age} yrs` : 'Age 55+'}
+                                {rt.dob ? ` (DOB: ${rt.dob})` : ''}
+                                {rt.retireYear ? ` · Retires: ${rt.retireYear}` : ''}
+                                {rt.rank ? ` · ${rt.rank}` : ''}
+                                {rt.subject ? ` · ${rt.subject}` : ''}
+                                {rt.phone ? ` · Tel: ${rt.phone}` : ''}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : card.expectedRetiringCount > 0 ? (
+                        <div style={{ color: isDark ? '#cbd5e1' : '#78350f', fontSize: '11px' }}>
+                          {card.expectedRetiringCount} teacher(s) aged 55+ recorded in census count. Click{' '}
+                          <b>Edit School</b> below to enter or confirm their names.
+                        </div>
+                      ) : (
+                        <div style={{ color: isDark ? '#94a3b8' : '#64748b', fontSize: '11px' }}>
+                          No teachers currently aged 55+ at this school.
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Mini Progress Bar */}
                   <div
@@ -2122,28 +2314,53 @@ function Kpis({
                       gap: '8px',
                       fontSize: '11px',
                       color: isDark ? '#94a3b8' : '#64748b',
+                      flexWrap: 'wrap',
                     }}
                   >
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                       {card.footer}
                     </span>
-                    {onInspectSchool && card.school && (
-                      <button
-                        type="button"
-                        onClick={() => onInspectSchool(card.school)}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: '#10b981',
-                          fontWeight: 700,
-                          fontSize: '11px',
-                          cursor: 'pointer',
-                          whiteSpace: 'nowrap',
-                          padding: 0,
-                        }}
-                      >
-                        Open School →
-                      </button>
+                    {card.school && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {onEditSchool && (
+                          <button
+                            type="button"
+                            onClick={() => onEditSchool(card.school)}
+                            style={{
+                              background: isDark ? '#334155' : '#e2e8f0',
+                              border: 'none',
+                              borderRadius: '5px',
+                              color: isDark ? '#f8fafc' : '#0f172a',
+                              fontWeight: 600,
+                              fontSize: '11px',
+                              cursor: 'pointer',
+                              whiteSpace: 'nowrap',
+                              padding: '3px 8px',
+                            }}
+                          >
+                            Edit School
+                          </button>
+                        )}
+                        {onInspectSchool && (
+                          <button
+                            type="button"
+                            onClick={() => onInspectSchool(card.school)}
+                            style={{
+                              background: '#059669',
+                              border: 'none',
+                              borderRadius: '5px',
+                              color: '#ffffff',
+                              fontWeight: 700,
+                              fontSize: '11px',
+                              cursor: 'pointer',
+                              whiteSpace: 'nowrap',
+                              padding: '3px 9px',
+                            }}
+                          >
+                            View Full Window →
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -2380,16 +2597,28 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
   const [target, setTarget] = useState(35);
   const [toastMsg, setToastMsg] = useState('');
 
-  // Schools tab state
+  // Schools tab & Broad School Window state
   const [q, setQ] = useState('');
   const [cirFilter, setCirFilter] = useState('All');
-  const [openSchoolKey, setOpenSchoolKey] = useState('');
   const [showRegisterForm, setShowRegisterForm] = useState(false);
   const [newName, setNewName] = useState('');
   const [newCode, setNewCode] = useState('');
   const [newOwn, setNewOwn] = useState('PUBLIC');
   const [newCir, setNewCir] = useState(DEFAULT_CIRCUITS[0]);
   const [newHead, setNewHead] = useState('');
+
+  // Broad School Details & Edit Window Modal state
+  const [detailSchoolId, setDetailSchoolId] = useState<string>('');
+  const [detailModalMode, setDetailModalMode] = useState<'view' | 'edit'>('view');
+  const [editDraft, setEditDraft] = useState<any>(null);
+  const [mergeTargetId, setMergeTargetId] = useState<string>('');
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // Circuit Manager Modal state
+  const [showCircuitModal, setShowCircuitModal] = useState(false);
+  const [circuitRenameInputs, setCircuitRenameInputs] = useState<Record<string, string>>({});
+  const [customCircuits, setCustomCircuits] = useState<string[]>([]);
+  const [newCustomCirName, setNewCustomCirName] = useState('');
 
   // Interactive School Editor Selection (for Enrolment, Facilities, Textbooks)
   const [selectedSchoolId, setSelectedSchoolId] = useState<string>('');
@@ -2411,7 +2640,7 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
     setToastMsg(m);
     setTimeout(() => {
       setToastMsg(prev => (prev === m ? '' : prev));
-    }, 3000);
+    }, 3500);
   };
 
   // Filter out empty drafts from live portal submissions
@@ -2422,14 +2651,14 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
     });
   }, [submissions]);
 
-  // Group submitted portal teachers by normalized school name (deduplicated by staffId)
+  // Group submitted portal teachers by canonical school match key (deduplicated by staffId)
   const portalTeachersBySchool = useMemo(() => {
     const map = new Map<string, any[]>();
     const seenStaff = new Map<string, Set<string>>();
 
     validSubmissions.forEach((sub: any) => {
       if (!sub.school || sub.category === 'Education Office') return;
-      const k = norm(sub.school);
+      const k = schoolMatchKey(sub.school);
       if (!k) return;
       const staffKey = sub.staffId ? norm(sub.staffId) : sub.id;
 
@@ -2449,28 +2678,37 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
   const schools = useMemo(() => {
     const schoolMap = new Map<string, any>();
 
-    // 1. Add all Firestore `schools` documents (deduplicating by normalized school name)
+    // 1. Add all Firestore `schools` documents (deduplicating by canonical schoolMatchKey)
     schoolsData.forEach((raw: any) => {
       const rawName = txt(raw.name || raw.school);
-      const k = norm(rawName);
+      const k = schoolMatchKey(rawName);
       if (!k) return;
       const existing = schoolMap.get(k);
-      if (!existing || (raw.enr && !existing.enr)) {
+      if (!existing) {
         schoolMap.set(k, raw);
+      } else {
+        // Prefer the record that has actual census enrolment or official numeric EMIS code
+        const existingHasEnr = Array.isArray(existing.enr) && sum(existing.enr) > 0;
+        const rawHasEnr = Array.isArray(raw.enr) && sum(raw.enr) > 0;
+        if (rawHasEnr && !existingHasEnr) {
+          schoolMap.set(k, { ...existing, ...raw });
+        } else {
+          schoolMap.set(k, { ...raw, ...existing });
+        }
       }
     });
 
-    // 2. Auto-discover any school referenced in teacher portal submissions
+    // 2. Auto-discover any school referenced in teacher portal submissions that isn't already in schoolMap
     validSubmissions.forEach((sub: any) => {
       if (!sub.school || sub.category === 'Education Office') return;
-      const k = norm(sub.school);
+      const k = schoolMatchKey(sub.school);
       if (!k) return;
       if (!schoolMap.has(k)) {
         schoolMap.set(k, {
           id: `virtual_${k}`,
           name: txt(sub.school).toUpperCase(),
           school: txt(sub.school).toUpperCase(),
-          circuit: txt(sub.circuit || 'UNASSIGNED').toUpperCase(),
+          circuit: canonicalCircuit(sub.circuit || 'ASHAMANG'),
           type: 'PUBLIC',
           levels: sub.category === 'SENIOR HIGH SCHOOL' ? 'SHS' : 'KG, PRY & JHS',
         });
@@ -2486,13 +2724,15 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
       const override = localOverrides[id] || {};
       const merged = { ...raw, ...override };
 
-      const name = txt(merged.name || merged.school || `School ${idx + 1}`);
-      const k = norm(name);
+      const name = txt(merged.name || merged.school || `School ${idx + 1}`).toUpperCase();
+      const k = schoolMatchKey(name);
       const emis = txt(merged.emis || merged.code || `TM-${1000 + idx * 7}`);
-      const circuit = txt(merged.circuit || 'ASHAMANG').toUpperCase();
+      const circuit = override.circuit
+        ? txt(override.circuit).toUpperCase()
+        : canonicalCircuit(merged.circuit || 'ASHAMANG');
       const type = txt(merged.type || merged.own || 'PUBLIC').toUpperCase();
 
-      // Build `tq` from live portal submissions for this school
+      // Build `tq`, `retiringTeachers`, and `allStaffRoster` from live portal submissions + workbook data
       const matchedSubs = portalTeachersBySchool.get(k) || [];
       const portalTq = {
         n: 0,
@@ -2506,6 +2746,10 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
       };
       let portalTrainedCount = 0;
 
+      const portalRoster: any[] = [];
+      const portalRetiring: any[] = [];
+      const portalSeniorFallback: any[] = [];
+
       matchedSubs.forEach((sub: any) => {
         portalTq.n++;
         const sex = txt(sub.sex).toUpperCase();
@@ -2513,14 +2757,14 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
         else if (sex.startsWith('F')) portalTq.F++;
 
         const by = yr(sub.dob);
+        const g = by ? NOW - by : 0;
         if (by) {
-          const g = NOW - by;
           portalTq.age[g < 30 ? 0 : g < 40 ? 1 : g < 50 ? 2 : g < 55 ? 3 : g < 60 ? 4 : 5]++;
         }
 
-        const fy = yr(sub.dateFirstAppointment);
+        const fy = yr(sub.firstAppointment || sub.dateFirstAppointment);
+        const v = fy ? NOW - fy : 0;
         if (fy) {
-          const v = NOW - fy;
           portalTq.svc[v < 5 ? 0 : v < 15 ? 1 : v < 25 ? 2 : 3]++;
         }
 
@@ -2543,6 +2787,36 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
 
         const subj = txt(sub.subject || sub.areaOfSpecialization || 'GENERAL').toUpperCase();
         inc(portalTq.sub, subj);
+
+        const fullName =
+          txt(sub.teacherName) ||
+          `${txt(sub.firstName)} ${txt(sub.otherNames)} ${txt(sub.surname)}`.replace(/\s+/g, ' ').trim() ||
+          'TEACHER';
+
+        const staffObj = {
+          id: sub.id,
+          name: fullName.toUpperCase(),
+          staffId: txt(sub.staffId || sub.regNo),
+          sex: sex.startsWith('M') ? 'MALE' : sex.startsWith('F') ? 'FEMALE' : '-',
+          age: g,
+          dob: txt(sub.dob),
+          retireYear: by ? by + 60 : '',
+          yearsLeft: g ? Math.max(0, 60 - g) : null,
+          serviceYears: v,
+          rank: rnk,
+          prof: profLabel,
+          subject: subj,
+          phone: txt(sub.mobile || sub.telephone || sub.phone),
+          email: txt(sub.email),
+          source: 'Portal',
+        };
+        portalRoster.push(staffObj);
+
+        if (g >= 55) {
+          portalRetiring.push(staffObj);
+        } else if (!by && (v >= 25 || rnk.includes('DEPUTY DIR') || rnk.includes('ASST. DIR') || rnk.includes('ASSISTANT DIRECTOR'))) {
+          portalSeniorFallback.push(staffObj);
+        }
       });
 
       // Use imported `tq` if it has more records, otherwise use live `portalTq`
@@ -2552,6 +2826,44 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
           : portalTq.n > 0
           ? portalTq
           : merged.tq || portalTq;
+
+      // Combine retiring teachers from manual edits, census workbook `retiringList`, and portal `portalRetiring`
+      const combinedRetiring: any[] = [];
+      const seenRetiring = new Set<string>();
+      const pushRetiring = (item: any) => {
+        if (!item || !item.name) return;
+        const rk = norm(item.staffId || item.name);
+        if (!rk || seenRetiring.has(rk)) return;
+        seenRetiring.add(rk);
+        combinedRetiring.push(item);
+      };
+
+      if (Array.isArray(merged.retiringTeachers)) {
+        merged.retiringTeachers.forEach(pushRetiring);
+      }
+      if (Array.isArray(merged.tq?.retiringList)) {
+        merged.tq.retiringList.forEach(pushRetiring);
+      }
+      portalRetiring.forEach(pushRetiring);
+
+      // If census `age[4] + age[5]` is still higher than named retiring teachers, include senior fallback portal teachers
+      const expected55Count = (finalTq.age?.[4] || 0) + (finalTq.age?.[5] || 0);
+      if (combinedRetiring.length < expected55Count && portalSeniorFallback.length > 0) {
+        portalSeniorFallback.slice(0, expected55Count - combinedRetiring.length).forEach(pushRetiring);
+      }
+
+      // Combine full staff roster
+      const allStaffRoster: any[] = [...portalRoster];
+      const seenRoster = new Set(portalRoster.map(p => norm(p.staffId || p.name)));
+      if (Array.isArray(merged.tq?.staffList)) {
+        merged.tq.staffList.forEach((st: any) => {
+          const sk = norm(st.staffId || st.name);
+          if (sk && !seenRoster.has(sk)) {
+            seenRoster.add(sk);
+            allStaffRoster.push(st);
+          }
+        });
+      }
 
       // Enrolment array `[kgB, kgG, priB, priG, jhsB, jhsG]`
       let enrArr: number[] = [0, 0, 0, 0, 0, 0];
@@ -2573,7 +2885,6 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
       if (Array.isArray(merged.cl) && merged.cl.length === 22) {
         clArr = merged.cl.map(num);
       } else if (sum(enrArr) > 0) {
-        // Distribute level totals evenly across classes if only level totals were entered
         clArr[0] = Math.floor(enrArr[0] / 2);
         clArr[1] = Math.floor(enrArr[1] / 2);
         clArr[2] = enrArr[0] - clArr[0];
@@ -2620,7 +2931,6 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
         if ('lab' in merged.fac || 'elec' in merged.fac || 'toilet' in merged.fac) {
           facObj = merged.fac;
         } else {
-          // Convert legacy facility keys if present
           facObj = {
             lab: Boolean(merged.fac['ICT lab']),
             sci: Boolean(merged.fac['Science lab']),
@@ -2638,7 +2948,7 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
         }
       }
 
-      // Normalize textbooks `tb` array (12 subjects: ADEQUATE / INADEQUATE / NOT AVAILABLE)
+      // Normalize textbooks `tb` array
       let tbArr: string[] | null = null;
       if (Array.isArray(merged.tb) && merged.tb.length === TB.length) {
         tbArr = merged.tb;
@@ -2680,6 +2990,8 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
         lang: merged.lang || null,
         tq: finalTq,
         portalTeachers: matchedSubs,
+        retiringTeachers: combinedRetiring,
+        allStaffRoster,
       };
     });
   }, [schoolsData, validSubmissions, portalTeachersBySchool, localOverrides]);
@@ -2689,13 +3001,57 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
     return schools.find(s => s.id === selectedSchoolId) || schools[0];
   }, [schools, selectedSchoolId]);
 
+  const detailSchool = useMemo(() => {
+    if (!detailSchoolId) return null;
+    return schools.find(s => s.id === detailSchoolId) || null;
+  }, [schools, detailSchoolId]);
+
   const allCircuits = useMemo(() => {
-    const set = new Set<string>(DEFAULT_CIRCUITS);
+    const set = new Set<string>([...DEFAULT_CIRCUITS, ...customCircuits]);
     schools.forEach(s => {
       if (s.circuit) set.add(s.circuit);
     });
     return Array.from(set).sort();
-  }, [schools]);
+  }, [schools, customCircuits]);
+
+  // Open the Broad School Details / Edit Window
+  const openSchoolWindow = (school: any, mode: 'view' | 'edit' = 'view') => {
+    if (!school) return;
+    setDetailSchoolId(school.id);
+    setDetailModalMode(mode);
+    setMergeTargetId('');
+    const a4 = tqo(school).age?.[4] || 0;
+    const a5 = tqo(school).age?.[5] || 0;
+    setEditDraft({
+      name: school.name || '',
+      emis: school.emis || '',
+      circuit: school.circuit || DEFAULT_CIRCUITS[0],
+      type: school.type || 'PUBLIC',
+      levels: school.levels || 'KG, PRY & JHS',
+      mgmt: school.mgmt || 'MA/DA',
+      head: school.head === 'Not assigned' ? '' : school.head || '',
+      phone: school.phone || '',
+      email: school.email || '',
+      rooms: school.rooms || 0,
+      nts: school.nts || 0,
+      enr: [...(school.enr || [0, 0, 0, 0, 0, 0])],
+      tch: [...(school.tch || [0, 0, 0])],
+      trn: [...(school.trn || [0, 0, 0])],
+      age50_54: tqo(school).age?.[3] || 0,
+      age55_59: a4,
+      age60Plus: a5,
+      retiringTeachers: (school.retiringTeachers || []).map((rt: any) => ({
+        name: rt.name || '',
+        staffId: rt.staffId || '',
+        age: rt.age || 56,
+        dob: rt.dob || '',
+        retireYear: rt.retireYear || NOW + 4,
+        rank: rt.rank || '',
+        subject: rt.subject || '',
+        phone: rt.phone || '',
+      })),
+    });
+  };
 
   // Save a patch to a single school in Firestore
   const saveSchoolPatch = async (school: any, patch: Record<string, any>) => {
@@ -2704,11 +3060,13 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
       [school.id]: { ...(prev[school.id] || {}), ...patch },
     }));
     try {
+      const updatedName = txt(patch.name || school.name).toUpperCase();
+      const updatedCircuit = txt(patch.circuit || school.circuit).toUpperCase();
       const payload = {
         ...patch,
-        name: school.name,
-        school: school.name,
-        circuit: patch.circuit || school.circuit,
+        name: updatedName,
+        school: updatedName,
+        circuit: updatedCircuit,
         updatedAt: serverTimestamp(),
       };
       if (school.firestoreId) {
@@ -2733,6 +3091,201 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
     } catch (e) {
       console.error('Error saving school patch:', e);
       showToast('Failed to sync change to cloud');
+    }
+  };
+
+  // Save full edits from the Broad School Edit Window (and update matching portal submissions if school/circuit changed)
+  const handleSaveFullSchoolEdit = async () => {
+    if (!detailSchool || !editDraft) return;
+    setSavingEdit(true);
+    try {
+      const cleanName = txt(editDraft.name).toUpperCase() || detailSchool.name;
+      const cleanEmis = txt(editDraft.emis).toUpperCase() || detailSchool.emis;
+      const cleanCircuit = txt(editDraft.circuit).toUpperCase() || detailSchool.circuit;
+
+      const curTq = tqo(detailSchool);
+      const nextAge = [...(curTq.age || [0, 0, 0, 0, 0, 0])];
+      nextAge[3] = Math.max(0, num(editDraft.age50_54));
+      nextAge[4] = Math.max(0, num(editDraft.age55_59));
+      nextAge[5] = Math.max(0, num(editDraft.age60Plus));
+
+      const cleanedRetiring = (editDraft.retiringTeachers || [])
+        .filter((r: any) => txt(r.name))
+        .map((r: any) => ({
+          name: txt(r.name).toUpperCase(),
+          staffId: txt(r.staffId),
+          age: num(r.age) || 56,
+          dob: txt(r.dob),
+          retireYear: num(r.retireYear) || (num(r.age) ? NOW + Math.max(0, 60 - num(r.age)) : NOW + 3),
+          rank: txt(r.rank).toUpperCase(),
+          subject: txt(r.subject).toUpperCase(),
+          phone: txt(r.phone),
+          source: 'Verified',
+        }));
+
+      const patch = {
+        name: cleanName,
+        school: cleanName,
+        emis: cleanEmis,
+        code: cleanEmis,
+        circuit: cleanCircuit,
+        type: txt(editDraft.type).toUpperCase() || 'PUBLIC',
+        levels: txt(editDraft.levels).toUpperCase() || 'KG, PRY & JHS',
+        mgmt: txt(editDraft.mgmt).toUpperCase() || 'MA/DA',
+        head: txt(editDraft.head) || 'Not assigned',
+        phone: txt(editDraft.phone),
+        email: txt(editDraft.email),
+        rooms: Math.max(0, num(editDraft.rooms)),
+        nts: Math.max(0, num(editDraft.nts)),
+        enr: (editDraft.enr || [0, 0, 0, 0, 0, 0]).map((v: any) => Math.max(0, num(v))),
+        tch: (editDraft.tch || [0, 0, 0]).map((v: any) => Math.max(0, num(v))),
+        trn: (editDraft.trn || [0, 0, 0]).map((v: any) => Math.max(0, num(v))),
+        tq: {
+          ...curTq,
+          age: nextAge,
+          retiringList: cleanedRetiring,
+        },
+        retiringTeachers: cleanedRetiring,
+      };
+
+      await saveSchoolPatch(detailSchool, patch);
+
+      // If school name or circuit changed, also update any linked portal teacher submissions in Firestore
+      const linkedSubs = detailSchool.portalTeachers || [];
+      if (linkedSubs.length > 0 && (cleanName !== detailSchool.name || cleanCircuit !== detailSchool.circuit)) {
+        await Promise.all(
+          linkedSubs.map((sub: any) =>
+            sub.id
+              ? updateDoc(doc(db, 'submissions', sub.id), {
+                  school: cleanName,
+                  circuit: cleanCircuit,
+                }).catch(() => {})
+              : Promise.resolve()
+          )
+        );
+      }
+
+      showToast(`Saved updates for ${cleanName}`);
+      setDetailModalMode('view');
+    } catch (e) {
+      console.error('Failed to save full school edit:', e);
+      showToast('Error saving school updates');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  // Merge current duplicate school into another school and remove the duplicate
+  const handleMergeSchoolIntoTarget = async () => {
+    if (!detailSchool || !mergeTargetId) return;
+    const targetSchool = schools.find(s => s.id === mergeTargetId);
+    if (!targetSchool || targetSchool.id === detailSchool.id) return;
+
+    setSavingEdit(true);
+    try {
+      // Reassign any portal submissions from detailSchool to targetSchool
+      const subsToMove = detailSchool.portalTeachers || [];
+      await Promise.all(
+        subsToMove.map((sub: any) =>
+          sub.id
+            ? updateDoc(doc(db, 'submissions', sub.id), {
+                school: targetSchool.name,
+                circuit: targetSchool.circuit,
+              }).catch(() => {})
+            : Promise.resolve()
+        )
+      );
+
+      // Delete duplicate school document if it exists in Firestore
+      if (detailSchool.firestoreId) {
+        await deleteDoc(doc(db, 'schools', detailSchool.firestoreId));
+      }
+
+      showToast(`Merged ${detailSchool.name} into ${targetSchool.name}`);
+      setDetailSchoolId(targetSchool.id);
+      setDetailModalMode('view');
+    } catch (e) {
+      console.error('Error merging schools:', e);
+      showToast('Failed to merge schools');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  // Delete a duplicate school record from Firestore
+  const handleDeleteSchoolRecord = async (school: any) => {
+    if (!school) return;
+    if (!window.confirm(`Are you sure you want to delete school record "${school.name}" (${school.emis})?`)) return;
+    setSavingEdit(true);
+    try {
+      if (school.firestoreId) {
+        await deleteDoc(doc(db, 'schools', school.firestoreId));
+      }
+      setDetailSchoolId('');
+      showToast(`Deleted school record: ${school.name}`);
+    } catch (e) {
+      console.error('Error deleting school:', e);
+      showToast('Failed to delete school record');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  // Rename / Merge a circuit across all schools and portal teacher submissions in Firestore
+  const handleRenameCircuit = async (oldCircuit: string, newCircuitRaw: string) => {
+    const targetCir = txt(newCircuitRaw).toUpperCase();
+    if (!targetCir || targetCir === oldCircuit) return;
+    setSavingEdit(true);
+    try {
+      const affectedSchools = schools.filter(s => s.circuit === oldCircuit);
+      for (const s of affectedSchools) {
+        await saveSchoolPatch(s, { circuit: targetCir });
+      }
+      const affectedSubs = validSubmissions.filter(
+        (sub: any) => canonicalCircuit(sub.circuit) === oldCircuit || txt(sub.circuit).toUpperCase() === oldCircuit
+      );
+      await Promise.all(
+        affectedSubs.map((sub: any) =>
+          sub.id ? updateDoc(doc(db, 'submissions', sub.id), { circuit: targetCir }).catch(() => {}) : Promise.resolve()
+        )
+      );
+      if (cirFilter === oldCircuit) setCirFilter(targetCir);
+      showToast(`Renamed circuit "${oldCircuit}" → "${targetCir}" (${affectedSchools.length} schools updated)`);
+    } catch (e) {
+      console.error('Error renaming circuit:', e);
+      showToast('Failed to rename circuit');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  // One-click standardize all duplicate circuit spellings in Firestore (`schools` + `submissions`)
+  const handleStandardizeAllCircuitsInCloud = async () => {
+    setSavingEdit(true);
+    try {
+      let updatedCount = 0;
+      for (const raw of schoolsData) {
+        if (!raw.id) continue;
+        const std = canonicalCircuit(raw.circuit);
+        if (std && std !== txt(raw.circuit).toUpperCase()) {
+          await updateDoc(doc(db, 'schools', raw.id), { circuit: std }).catch(() => {});
+          updatedCount++;
+        }
+      }
+      for (const sub of validSubmissions) {
+        if (!sub.id || !sub.circuit) continue;
+        const std = canonicalCircuit(sub.circuit);
+        if (std && std !== txt(sub.circuit).toUpperCase()) {
+          await updateDoc(doc(db, 'submissions', sub.id), { circuit: std }).catch(() => {});
+          updatedCount++;
+        }
+      }
+      showToast(`Standardized ${updatedCount} circuit records in cloud database!`);
+    } catch (e) {
+      console.error('Error standardizing circuits:', e);
+      showToast('Failed to standardize circuits');
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -3158,12 +3711,8 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
                 schools={schools}
                 validSubmissions={validSubmissions}
                 target={target}
-                onInspectSchool={s => {
-                  setTab('schools');
-                  setQ(s.name);
-                  setCirFilter('All');
-                  setOpenSchoolKey(s.emis + s.name);
-                }}
+                onInspectSchool={s => openSchoolWindow(s, 'view')}
+                onEditSchool={s => openSchoolWindow(s, 'edit')}
                 items={[
                   ['Schools', String(schools.length)],
                   ['Pupils', total.toLocaleString()],
@@ -3236,6 +3785,24 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
                     </option>
                   ))}
                 </select>
+                <button
+                  onClick={() => setShowCircuitModal(true)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    backgroundColor: isDark ? '#1e293b' : '#ffffff',
+                    color: isDark ? '#38bdf8' : '#0369a1',
+                    border: `1px solid ${isDark ? '#0284c7' : '#7dd3fc'}`,
+                    borderRadius: '8px',
+                    padding: '9px 14px',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Edit3 size={15} /> Manage / Edit Circuits ({allCircuits.length})
+                </button>
                 <button
                   onClick={() => setShowRegisterForm(v => !v)}
                   style={{
@@ -3372,13 +3939,13 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
               )}
 
               <div style={{ fontSize: '12px', color: isDark ? '#94a3b8' : '#64748b' }}>
-                Showing {list.length} schools (click any school to inspect full census & portal staff details)
+                Showing {list.length} schools (click <b>View details</b> to open the full broad window or <b>Edit School</b> to correct circuit, school name, enrolment & retiring teachers)
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {list.slice(0, 150).map(s => {
                   const key = s.emis + s.name;
-                  const isOpen = openSchoolKey === key;
+                  const retCount = (tqo(s).age?.[4] || 0) + (tqo(s).age?.[5] || 0);
                   return (
                     <div
                       key={s.id || key}
@@ -3388,117 +3955,77 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
                         backgroundColor: isDark ? '#1e293b' : '#ffffff',
                         padding: '12px 16px',
                         fontSize: '13.5px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: '12px',
+                        flexWrap: 'wrap',
                       }}
                     >
-                      <button
-                        style={{
-                          width: '100%',
-                          textAlign: 'left',
-                          background: 'none',
-                          border: 'none',
-                          color: 'inherit',
-                          padding: 0,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          gap: '8px',
-                        }}
-                        onClick={() => setOpenSchoolKey(isOpen ? '' : key)}
+                      <div
+                        style={{ flex: 1, minWidth: '240px', cursor: 'pointer' }}
+                        onClick={() => openSchoolWindow(s, 'view')}
                       >
-                        <div>
-                          <div style={{ fontWeight: 700, color: isDark ? '#f8fafc' : '#0f172a' }}>
-                            {s.name}
-                          </div>
-                          <div style={{ fontSize: '12px', color: isDark ? '#94a3b8' : '#64748b', marginTop: '2px' }}>
-                            {s.emis} · {s.circuit} · {s.type} · {pupils(s)} pupils · {teachers(s)} teachers (
-                            {s.portalTeachers?.length || 0} portal submissions) · facilities {score(s)}/8
-                          </div>
-                        </div>
-                        <span
-                          style={{
-                            fontSize: '11px',
-                            padding: '2px 8px',
-                            borderRadius: '99px',
-                            backgroundColor: isOpen ? '#047857' : isDark ? '#334155' : '#f1f5f9',
-                            color: isOpen ? '#fff' : isDark ? '#cbd5e1' : '#475569',
-                            fontWeight: 600,
-                          }}
-                        >
-                          {isOpen ? 'Hide details' : 'View details'}
-                        </span>
-                      </button>
-
-                      {isOpen && (
-                        <div
-                          style={{
-                            marginTop: '12px',
-                            paddingTop: '12px',
-                            borderTop: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-                            gap: '8px',
-                            fontSize: '12.5px',
-                          }}
-                        >
-                          <div>
-                            <b>Head teacher:</b> {s.head || '-'}
-                          </div>
-                          <div>
-                            <b>Levels:</b> {s.levels || '-'}
-                          </div>
-                          <div>
-                            <b>Management unit:</b> {s.mgmt || '-'}
-                          </div>
-                          <div>
-                            <b>Phone:</b> {s.phone || '-'}
-                          </div>
-                          <div>
-                            <b>Email:</b> {s.email || '-'}
-                          </div>
-                          <div>
-                            <b>PTR:</b> {ptr(s) ? ptr(s).toFixed(1) : '-'} · <b>Classrooms:</b> {s.rooms}
-                          </div>
-                          <div>
-                            <b>Teachers on staff list:</b> {tqo(s).n} (M {tqo(s).M} / F {tqo(s).F})
-                          </div>
-                          <div>
-                            <b>Textbooks short in:</b>{' '}
-                            {s.tb
-                              ? TB.filter((_, i) => s.tb?.[i] !== 'ADEQUATE').join(', ') || 'none'
-                              : 'no textbook data'}
-                          </div>
-                          <div style={{ gridColumn: '1 / -1' }}>
-                            <b>Missing facilities:</b> {missing(s)}
-                          </div>
-
-                          {s.portalTeachers && s.portalTeachers.length > 0 && (
-                            <div style={{ gridColumn: '1 / -1', marginTop: '6px' }}>
-                              <div style={{ fontWeight: 700, marginBottom: '6px', color: '#10b981' }}>
-                                Submitted Teachers Mapped from Portal ({s.portalTeachers.length}):
-                              </div>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                {s.portalTeachers.map((t: any) => (
-                                  <span
-                                    key={t.id}
-                                    style={{
-                                      fontSize: '11.5px',
-                                      padding: '3px 8px',
-                                      borderRadius: '6px',
-                                      backgroundColor: isDark ? '#064e3b' : '#d1fae5',
-                                      color: isDark ? '#a7f3d0' : '#065f46',
-                                      fontWeight: 600,
-                                    }}
-                                  >
-                                    {t.teacherName || `${t.firstName || ''} ${t.surname || ''}`} · ID: {t.staffId} ·{' '}
-                                    {t.currentRank || 'Teacher'}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
+                        <div style={{ fontWeight: 700, color: isDark ? '#f8fafc' : '#0f172a', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          <span>{s.name}</span>
+                          {retCount > 0 && (
+                            <span
+                              style={{
+                                fontSize: '10.5px',
+                                padding: '1px 7px',
+                                borderRadius: '99px',
+                                backgroundColor: isDark ? 'rgba(245, 158, 11, 0.2)' : '#fef3c7',
+                                color: isDark ? '#fbbf24' : '#b45309',
+                                fontWeight: 700,
+                              }}
+                            >
+                              {retCount} Retiring (55+)
+                            </span>
                           )}
                         </div>
-                      )}
+                        <div style={{ fontSize: '12px', color: isDark ? '#94a3b8' : '#64748b', marginTop: '2px' }}>
+                          {s.emis} · {s.circuit} · {s.type} · {pupils(s)} pupils · {teachers(s)} teachers (
+                          {s.portalTeachers?.length || 0} portal submissions) · facilities {score(s)}/8
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          onClick={() => openSchoolWindow(s, 'edit')}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            fontSize: '12px',
+                            padding: '6px 12px',
+                            borderRadius: '99px',
+                            border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                            backgroundColor: isDark ? '#0f172a' : '#f8fafc',
+                            color: isDark ? '#38bdf8' : '#0369a1',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <Edit3 size={12} /> Edit School
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openSchoolWindow(s, 'view')}
+                          style={{
+                            fontSize: '12px',
+                            padding: '6px 14px',
+                            borderRadius: '99px',
+                            border: 'none',
+                            backgroundColor: '#047857',
+                            color: '#ffffff',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          View details ↗
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
@@ -3529,12 +4056,8 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
                 schools={schools}
                 validSubmissions={validSubmissions}
                 target={target}
-                onInspectSchool={s => {
-                  setTab('schools');
-                  setQ(s.name);
-                  setCirFilter('All');
-                  setOpenSchoolKey(s.emis + s.name);
-                }}
+                onInspectSchool={s => openSchoolWindow(s, 'view')}
+                onEditSchool={s => openSchoolWindow(s, 'edit')}
                 items={[
                   ['Boys', totB.toLocaleString()],
                   ['Girls', totG.toLocaleString()],
@@ -3714,12 +4237,8 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
                 schools={schools}
                 validSubmissions={validSubmissions}
                 target={target}
-                onInspectSchool={s => {
-                  setTab('schools');
-                  setQ(s.name);
-                  setCirFilter('All');
-                  setOpenSchoolKey(s.emis + s.name);
-                }}
+                onInspectSchool={s => openSchoolWindow(s, 'view')}
+                onEditSchool={s => openSchoolWindow(s, 'edit')}
                 items={[
                   ['Teachers (staff list / portal)', String(T(s => tqo(s).n))],
                   ['Male / Female', M + ' / ' + F],
@@ -3812,12 +4331,8 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
                 schools={schools}
                 validSubmissions={validSubmissions}
                 target={target}
-                onInspectSchool={s => {
-                  setTab('schools');
-                  setQ(s.name);
-                  setCirFilter('All');
-                  setOpenSchoolKey(s.emis + s.name);
-                }}
+                onInspectSchool={s => openSchoolWindow(s, 'view')}
+                onEditSchool={s => openSchoolWindow(s, 'edit')}
                 items={[
                   ['Schools with facility data', String(wf.length)],
                   ['Computers', String(pc)],
@@ -3984,12 +4499,8 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
                 schools={schools}
                 validSubmissions={validSubmissions}
                 target={target}
-                onInspectSchool={s => {
-                  setTab('schools');
-                  setQ(s.name);
-                  setCirFilter('All');
-                  setOpenSchoolKey(s.emis + s.name);
-                }}
+                onInspectSchool={s => openSchoolWindow(s, 'view')}
+                onEditSchool={s => openSchoolWindow(s, 'edit')}
                 items={[
                   ['Schools with textbook data', String(wb.length)],
                   [
@@ -4280,6 +4791,1153 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
           </div>
         )}
       </main>
+
+      {/* BROAD SCHOOL DETAILS & FULL EDIT WINDOW MODAL */}
+      {detailSchool && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9990,
+            backgroundColor: 'rgba(2, 6, 23, 0.76)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+          }}
+          onClick={e => {
+            if (e.target === e.currentTarget) setDetailSchoolId('');
+          }}
+        >
+          <div
+            style={{
+              width: '96vw',
+              maxWidth: '1140px',
+              maxHeight: '92vh',
+              borderRadius: '14px',
+              backgroundColor: isDark ? '#0f172a' : '#ffffff',
+              border: `1px solid ${isDark ? '#334155' : '#cbd5e1'}`,
+              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.55)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              color: isDark ? '#f8fafc' : '#0f172a',
+            }}
+          >
+            {/* Broad Window Header */}
+            <div
+              style={{
+                padding: '16px 22px',
+                backgroundColor: isDark ? '#1e293b' : '#f8fafc',
+                borderBottom: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                gap: '14px',
+                flexWrap: 'wrap',
+              }}
+            >
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      padding: '2px 8px',
+                      borderRadius: '99px',
+                      backgroundColor: '#047857',
+                      color: '#ffffff',
+                    }}
+                  >
+                    {detailSchool.emis}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      padding: '2px 8px',
+                      borderRadius: '99px',
+                      backgroundColor: isDark ? '#334155' : '#e2e8f0',
+                      color: isDark ? '#38bdf8' : '#0369a1',
+                    }}
+                  >
+                    Circuit: {detailSchool.circuit}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      padding: '2px 8px',
+                      borderRadius: '99px',
+                      backgroundColor: isDark ? '#334155' : '#f1f5f9',
+                      color: isDark ? '#cbd5e1' : '#475569',
+                    }}
+                  >
+                    {detailSchool.type} · {detailSchool.levels}
+                  </span>
+                </div>
+                <h2 style={{ margin: '6px 0 2px', fontSize: '20px', fontWeight: 800 }}>
+                  {detailSchool.name}
+                </h2>
+                <div style={{ fontSize: '12.5px', color: isDark ? '#94a3b8' : '#64748b' }}>
+                  Head Teacher: <b>{detailSchool.head || 'Not assigned'}</b> · Phone: <b>{detailSchool.phone || '-'}</b> ·
+                  Email: <b>{detailSchool.email || '-'}</b> · Mgmt Unit: <b>{detailSchool.mgmt || 'MA/DA'}</b>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => setDetailModalMode('view')}
+                  style={{
+                    padding: '7px 14px',
+                    borderRadius: '8px',
+                    border: `1px solid ${detailModalMode === 'view' ? '#047857' : isDark ? '#475569' : '#cbd5e1'}`,
+                    backgroundColor: detailModalMode === 'view' ? '#047857' : 'transparent',
+                    color: detailModalMode === 'view' ? '#fff' : isDark ? '#e2e8f0' : '#334155',
+                    fontSize: '12.5px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Full School & Staff Dossier
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openSchoolWindow(detailSchool, 'edit')}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    padding: '7px 14px',
+                    borderRadius: '8px',
+                    border: `1px solid ${detailModalMode === 'edit' ? '#0284c7' : isDark ? '#475569' : '#cbd5e1'}`,
+                    backgroundColor: detailModalMode === 'edit' ? '#0284c7' : 'transparent',
+                    color: detailModalMode === 'edit' ? '#fff' : isDark ? '#38bdf8' : '#0369a1',
+                    fontSize: '12.5px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Edit3 size={13} /> Edit School, Circuit & Retiring Staff
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDetailSchoolId('')}
+                  style={{
+                    padding: '7px 12px',
+                    borderRadius: '8px',
+                    border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                    backgroundColor: isDark ? '#0f172a' : '#fff',
+                    color: isDark ? '#f8fafc' : '#0f172a',
+                    fontSize: '12.5px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Close ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Broad Window Body */}
+            <div style={{ padding: '20px 22px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              {detailModalMode === 'view' ? (
+                <>
+                  {/* Top Summary Metrics Row */}
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(155px, 1fr))',
+                      gap: '10px',
+                    }}
+                  >
+                    {[
+                      ['Total Pupils', pupils(detailSchool).toLocaleString(), `B: ${detailSchool.enr[0] + detailSchool.enr[2] + detailSchool.enr[4]} / G: ${detailSchool.enr[1] + detailSchool.enr[3] + detailSchool.enr[5]}`],
+                      ['Teaching Staff', String(teachers(detailSchool)), `M: ${tqo(detailSchool).M} / F: ${tqo(detailSchool).F} (${detailSchool.portalTeachers?.length || 0} portal)`],
+                      ['Trained Teachers', `${sum(detailSchool.trn || [])} (${pct(sum(detailSchool.trn || []), teachers(detailSchool))}%)`, `Non-teaching: ${detailSchool.nts || 0}`],
+                      ['Pupil-Teacher Ratio', ptr(detailSchool) ? ptr(detailSchool).toFixed(1) + ':1' : '-', `Target PTR: ${target}:1`],
+                      ['Classrooms', String(detailSchool.rooms || 0), detailSchool.rooms ? `${(pupils(detailSchool) / detailSchool.rooms).toFixed(1)} pupils/room` : '-'],
+                      ['Retiring (Aged 55+)', String((tqo(detailSchool).age?.[4] || 0) + (tqo(detailSchool).age?.[5] || 0)), `55-59: ${tqo(detailSchool).age?.[4] || 0} · 60+: ${tqo(detailSchool).age?.[5] || 0}`],
+                      ['Facilities Score', `${score(detailSchool)} / 8`, missing(detailSchool) === 'none' ? 'All core present' : `Missing: ${missing(detailSchool)}`],
+                    ].map(([lbl, val, sub], idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          padding: '12px',
+                          borderRadius: '10px',
+                          backgroundColor: isDark ? '#1e293b' : '#f8fafc',
+                          border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+                        }}
+                      >
+                        <div style={{ fontSize: '11.5px', color: isDark ? '#94a3b8' : '#64748b' }}>{lbl}</div>
+                        <div style={{ fontSize: '20px', fontWeight: 800, margin: '3px 0' }}>{val}</div>
+                        <div style={{ fontSize: '11px', color: isDark ? '#cbd5e1' : '#475569' }}>{sub}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Highlighted Retiring Teachers Section (Aged 55 & Above) */}
+                  <div
+                    style={{
+                      padding: '14px 16px',
+                      borderRadius: '10px',
+                      backgroundColor: isDark ? 'rgba(245, 158, 11, 0.08)' : '#fffbeb',
+                      border: `1px solid ${isDark ? 'rgba(245, 158, 11, 0.35)' : '#fde68a'}`,
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
+                      <div>
+                        <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: isDark ? '#fbbf24' : '#b45309' }}>
+                          Teachers Going on Retirement (Aged 55 & Above) — {detailSchool.name}
+                        </h3>
+                        <div style={{ fontSize: '12px', color: isDark ? '#cbd5e1' : '#78350f', marginTop: '2px' }}>
+                          Aged 55–59: <b>{tqo(detailSchool).age?.[4] || 0}</b> · Aged 60+: <b>{tqo(detailSchool).age?.[5] || 0}</b> · Near-retirement (50–54): <b>{tqo(detailSchool).age?.[3] || 0}</b>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => openSchoolWindow(detailSchool, 'edit')}
+                        style={{
+                          padding: '5px 12px',
+                          borderRadius: '6px',
+                          border: `1px solid ${isDark ? '#f59e0b' : '#d97706'}`,
+                          backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : '#fef3c7',
+                          color: isDark ? '#fbbf24' : '#92400e',
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        + Add / Edit Retiring Teacher Names
+                      </button>
+                    </div>
+
+                    {detailSchool.retiringTeachers && detailSchool.retiringTeachers.length > 0 ? (
+                      <Tbl
+                        isDark={isDark}
+                        cols={['Full Name', 'Staff ID', 'Sex', 'Age', 'DOB', 'Retirement Year', 'Rank', 'Subject / Qualification', 'Phone']}
+                        rows={detailSchool.retiringTeachers.map((rt: any) => [
+                          rt.name || '-',
+                          rt.staffId || '-',
+                          rt.sex || '-',
+                          rt.age ? `${rt.age} yrs` : '55+ yrs',
+                          rt.dob || '-',
+                          rt.retireYear || '-',
+                          rt.rank || '-',
+                          rt.subject || rt.prof || '-',
+                          rt.phone || '-',
+                        ])}
+                      />
+                    ) : (
+                      <div style={{ fontSize: '12.5px', color: isDark ? '#cbd5e1' : '#78350f' }}>
+                        {(tqo(detailSchool).age?.[4] || 0) + (tqo(detailSchool).age?.[5] || 0) > 0
+                          ? `This school has ${(tqo(detailSchool).age?.[4] || 0) + (tqo(detailSchool).age?.[5] || 0)} teacher(s) aged 55+ recorded in the census count. Click "+ Add / Edit Retiring Teacher Names" above to attach or verify their individual names.`
+                          : 'No teachers aged 55 and above currently recorded for this school.'}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Enrolment & Staffing Breakdown by Level (KG / Primary / JHS) */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '14px' }}>
+                    <Card title="Enrolment & Teachers by Level" isDark={isDark}>
+                      <Tbl
+                        isDark={isDark}
+                        cols={['Level', 'Boys', 'Girls', 'Total Pupils', 'Teachers', 'Trained']}
+                        rows={[
+                          [
+                            'Kindergarten (KG)',
+                            detailSchool.enr[0] || 0,
+                            detailSchool.enr[1] || 0,
+                            (detailSchool.enr[0] || 0) + (detailSchool.enr[1] || 0),
+                            detailSchool.tch?.[0] || 0,
+                            detailSchool.trn?.[0] || 0,
+                          ],
+                          [
+                            'Primary (P1–P6)',
+                            detailSchool.enr[2] || 0,
+                            detailSchool.enr[3] || 0,
+                            (detailSchool.enr[2] || 0) + (detailSchool.enr[3] || 0),
+                            detailSchool.tch?.[1] || 0,
+                            detailSchool.trn?.[1] || 0,
+                          ],
+                          [
+                            'JHS (JHS1–JHS3)',
+                            detailSchool.enr[4] || 0,
+                            detailSchool.enr[5] || 0,
+                            (detailSchool.enr[4] || 0) + (detailSchool.enr[5] || 0),
+                            detailSchool.tch?.[2] || 0,
+                            detailSchool.trn?.[2] || 0,
+                          ],
+                        ]}
+                      />
+                    </Card>
+
+                    <Card title="Facilities & Textbooks Status" isDark={isDark}>
+                      <div style={{ fontSize: '12.5px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div>
+                          <b>Present Core Facilities ({score(detailSchool)}/8):</b>{' '}
+                          {detailSchool.fac
+                            ? FAC.filter(([k]) => detailSchool.fac[k]).map(([, l]) => l).join(', ') || 'None'
+                            : 'No facility record'}
+                        </div>
+                        <div>
+                          <b>Missing Core Facilities:</b> {missing(detailSchool)}
+                        </div>
+                        <div>
+                          <b>Computers:</b> {detailSchool.fac?.pc || 0} · <b>Boys Toilet Seats:</b> {detailSchool.fac?.tM || 0} ·{' '}
+                          <b>Girls Toilet Seats:</b> {detailSchool.fac?.tF || 0}
+                        </div>
+                        <div>
+                          <b>Textbooks Status:</b>{' '}
+                          {detailSchool.tb
+                            ? TB.map((subj, idx) => `${subj}: ${detailSchool.tb?.[idx] || '-'}`).join(' · ')
+                            : 'No textbook record'}
+                        </div>
+                      </div>
+                    </Card>
+                  </div>
+
+                  {/* Full Staff Roster (Portal Submissions + Census Staff Sheet) */}
+                  <Card
+                    title={`Complete School Staff Roster (${detailSchool.allStaffRoster?.length || 0} named teachers)`}
+                    isDark={isDark}
+                  >
+                    {detailSchool.allStaffRoster && detailSchool.allStaffRoster.length > 0 ? (
+                      <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                        <Tbl
+                          isDark={isDark}
+                          cols={['Name', 'Staff ID', 'Sex', 'Age', 'Retire Yr', 'Rank', 'Qualification', 'Subject', 'Phone', 'Source']}
+                          rows={detailSchool.allStaffRoster.map((st: any) => [
+                            st.name || '-',
+                            st.staffId || '-',
+                            st.sex || '-',
+                            st.age || '-',
+                            st.retireYear || '-',
+                            st.rank || '-',
+                            st.prof || '-',
+                            st.subject || '-',
+                            st.phone || '-',
+                            st.source || 'Census',
+                          ])}
+                        />
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '12.5px', color: isDark ? '#94a3b8' : '#64748b' }}>
+                        No individual teacher names mapped yet. Import the Teaching Staff sheet or click "Edit School, Circuit & Retiring Staff" to add staff details.
+                      </div>
+                    )}
+                  </Card>
+                </>
+              ) : (
+                /* EDIT SCHOOL, CIRCUIT, ENROLMENT, RETIRING STAFF & MERGE FORM */
+                editDraft && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                    {/* 1. Core School & Circuit Information */}
+                    <Card title="1. Correct School Name, EMIS Code, Circuit & Administration Details" isDark={isDark}>
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                          gap: '12px',
+                          fontSize: '12.5px',
+                        }}
+                      >
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <b>School Name</b>
+                          <input
+                            value={editDraft.name}
+                            onChange={e => setEditDraft({ ...editDraft, name: e.target.value })}
+                            style={{
+                              padding: '8px 10px',
+                              borderRadius: '6px',
+                              border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                              backgroundColor: isDark ? '#0f172a' : '#fff',
+                              color: 'inherit',
+                            }}
+                          />
+                        </label>
+
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <b>EMIS Code</b>
+                          <input
+                            value={editDraft.emis}
+                            onChange={e => setEditDraft({ ...editDraft, emis: e.target.value })}
+                            style={{
+                              padding: '8px 10px',
+                              borderRadius: '6px',
+                              border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                              backgroundColor: isDark ? '#0f172a' : '#fff',
+                              color: 'inherit',
+                            }}
+                          />
+                        </label>
+
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <b>Circuit (Select or Type Custom below)</b>
+                          <select
+                            value={editDraft.circuit}
+                            onChange={e => setEditDraft({ ...editDraft, circuit: e.target.value })}
+                            style={{
+                              padding: '8px 10px',
+                              borderRadius: '6px',
+                              border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                              backgroundColor: isDark ? '#0f172a' : '#fff',
+                              color: 'inherit',
+                            }}
+                          >
+                            {allCircuits.map(c => (
+                              <option key={c} value={c}>
+                                {c}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <b>Or Enter Custom / Corrected Circuit Name</b>
+                          <input
+                            value={editDraft.circuit}
+                            onChange={e => setEditDraft({ ...editDraft, circuit: e.target.value.toUpperCase() })}
+                            placeholder="e.g. ASHAMANG"
+                            style={{
+                              padding: '8px 10px',
+                              borderRadius: '6px',
+                              border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                              backgroundColor: isDark ? '#0f172a' : '#fff',
+                              color: 'inherit',
+                            }}
+                          />
+                        </label>
+
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <b>Ownership Type</b>
+                          <select
+                            value={editDraft.type}
+                            onChange={e => setEditDraft({ ...editDraft, type: e.target.value })}
+                            style={{
+                              padding: '8px 10px',
+                              borderRadius: '6px',
+                              border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                              backgroundColor: isDark ? '#0f172a' : '#fff',
+                              color: 'inherit',
+                            }}
+                          >
+                            <option value="PUBLIC">PUBLIC</option>
+                            <option value="PRIVATE">PRIVATE</option>
+                            <option value="MISSION">MISSION</option>
+                          </select>
+                        </label>
+
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <b>School Levels</b>
+                          <input
+                            value={editDraft.levels}
+                            onChange={e => setEditDraft({ ...editDraft, levels: e.target.value })}
+                            style={{
+                              padding: '8px 10px',
+                              borderRadius: '6px',
+                              border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                              backgroundColor: isDark ? '#0f172a' : '#fff',
+                              color: 'inherit',
+                            }}
+                          />
+                        </label>
+
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <b>Management Unit</b>
+                          <input
+                            value={editDraft.mgmt}
+                            onChange={e => setEditDraft({ ...editDraft, mgmt: e.target.value })}
+                            style={{
+                              padding: '8px 10px',
+                              borderRadius: '6px',
+                              border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                              backgroundColor: isDark ? '#0f172a' : '#fff',
+                              color: 'inherit',
+                            }}
+                          />
+                        </label>
+
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <b>Head Teacher Name</b>
+                          <input
+                            value={editDraft.head}
+                            onChange={e => setEditDraft({ ...editDraft, head: e.target.value })}
+                            style={{
+                              padding: '8px 10px',
+                              borderRadius: '6px',
+                              border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                              backgroundColor: isDark ? '#0f172a' : '#fff',
+                              color: 'inherit',
+                            }}
+                          />
+                        </label>
+
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <b>Phone Number</b>
+                          <input
+                            value={editDraft.phone}
+                            onChange={e => setEditDraft({ ...editDraft, phone: e.target.value })}
+                            style={{
+                              padding: '8px 10px',
+                              borderRadius: '6px',
+                              border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                              backgroundColor: isDark ? '#0f172a' : '#fff',
+                              color: 'inherit',
+                            }}
+                          />
+                        </label>
+
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <b>Email Address</b>
+                          <input
+                            value={editDraft.email}
+                            onChange={e => setEditDraft({ ...editDraft, email: e.target.value })}
+                            style={{
+                              padding: '8px 10px',
+                              borderRadius: '6px',
+                              border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                              backgroundColor: isDark ? '#0f172a' : '#fff',
+                              color: 'inherit',
+                            }}
+                          />
+                        </label>
+
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <b>Total Classrooms</b>
+                          <input
+                            type="number"
+                            min={0}
+                            value={editDraft.rooms}
+                            onChange={e => setEditDraft({ ...editDraft, rooms: num(e.target.value) })}
+                            style={{
+                              padding: '8px 10px',
+                              borderRadius: '6px',
+                              border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                              backgroundColor: isDark ? '#0f172a' : '#fff',
+                              color: 'inherit',
+                            }}
+                          />
+                        </label>
+
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <b>Non-Teaching Staff</b>
+                          <input
+                            type="number"
+                            min={0}
+                            value={editDraft.nts}
+                            onChange={e => setEditDraft({ ...editDraft, nts: num(e.target.value) })}
+                            style={{
+                              padding: '8px 10px',
+                              borderRadius: '6px',
+                              border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                              backgroundColor: isDark ? '#0f172a' : '#fff',
+                              color: 'inherit',
+                            }}
+                          />
+                        </label>
+                      </div>
+                    </Card>
+
+                    {/* 2. Enrolment & Staffing Numbers */}
+                    <Card title="2. Enrolment, Teachers & Retirement Age Counts" isDark={isDark}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px', fontSize: '12.5px' }}>
+                        {(['KG', 'Primary', 'JHS'] as const).map((lv, idx) => (
+                          <div
+                            key={lv}
+                            style={{
+                              padding: '10px',
+                              borderRadius: '8px',
+                              border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+                            }}
+                          >
+                            <div style={{ fontWeight: 800, marginBottom: '8px', color: '#10b981' }}>{lv} Level</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                              <label>
+                                Boys
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={editDraft.enr[idx * 2] || 0}
+                                  onChange={e => {
+                                    const next = [...editDraft.enr];
+                                    next[idx * 2] = num(e.target.value);
+                                    setEditDraft({ ...editDraft, enr: next });
+                                  }}
+                                  style={{ width: '100%', padding: '5px', borderRadius: '4px', backgroundColor: isDark ? '#0f172a' : '#fff', color: 'inherit', border: '1px solid #64748b' }}
+                                />
+                              </label>
+                              <label>
+                                Girls
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={editDraft.enr[idx * 2 + 1] || 0}
+                                  onChange={e => {
+                                    const next = [...editDraft.enr];
+                                    next[idx * 2 + 1] = num(e.target.value);
+                                    setEditDraft({ ...editDraft, enr: next });
+                                  }}
+                                  style={{ width: '100%', padding: '5px', borderRadius: '4px', backgroundColor: isDark ? '#0f172a' : '#fff', color: 'inherit', border: '1px solid #64748b' }}
+                                />
+                              </label>
+                              <label>
+                                Total Teachers
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={editDraft.tch[idx] || 0}
+                                  onChange={e => {
+                                    const next = [...editDraft.tch];
+                                    next[idx] = num(e.target.value);
+                                    setEditDraft({ ...editDraft, tch: next });
+                                  }}
+                                  style={{ width: '100%', padding: '5px', borderRadius: '4px', backgroundColor: isDark ? '#0f172a' : '#fff', color: 'inherit', border: '1px solid #64748b' }}
+                                />
+                              </label>
+                              <label>
+                                Trained Teachers
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={editDraft.trn[idx] || 0}
+                                  onChange={e => {
+                                    const next = [...editDraft.trn];
+                                    next[idx] = num(e.target.value);
+                                    setEditDraft({ ...editDraft, trn: next });
+                                  }}
+                                  style={{ width: '100%', padding: '5px', borderRadius: '4px', backgroundColor: isDark ? '#0f172a' : '#fff', color: 'inherit', border: '1px solid #64748b' }}
+                                />
+                              </label>
+                            </div>
+                          </div>
+                        ))}
+
+                        <div
+                          style={{
+                            padding: '10px',
+                            borderRadius: '8px',
+                            border: `1px solid ${isDark ? '#f59e0b' : '#fde68a'}`,
+                            backgroundColor: isDark ? 'rgba(245, 158, 11, 0.06)' : '#fffbeb',
+                          }}
+                        >
+                          <div style={{ fontWeight: 800, marginBottom: '8px', color: isDark ? '#fbbf24' : '#b45309' }}>
+                            Retirement Cohort Counts
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                            <label>
+                              Aged 50–54
+                              <input
+                                type="number"
+                                min={0}
+                                value={editDraft.age50_54}
+                                onChange={e => setEditDraft({ ...editDraft, age50_54: num(e.target.value) })}
+                                style={{ width: '100%', padding: '5px', borderRadius: '4px', backgroundColor: isDark ? '#0f172a' : '#fff', color: 'inherit', border: '1px solid #64748b' }}
+                              />
+                            </label>
+                            <label>
+                              Aged 55–59
+                              <input
+                                type="number"
+                                min={0}
+                                value={editDraft.age55_59}
+                                onChange={e => setEditDraft({ ...editDraft, age55_59: num(e.target.value) })}
+                                style={{ width: '100%', padding: '5px', borderRadius: '4px', backgroundColor: isDark ? '#0f172a' : '#fff', color: 'inherit', border: '1px solid #64748b' }}
+                              />
+                            </label>
+                            <label>
+                              Aged 60+
+                              <input
+                                type="number"
+                                min={0}
+                                value={editDraft.age60Plus}
+                                onChange={e => setEditDraft({ ...editDraft, age60Plus: num(e.target.value) })}
+                                style={{ width: '100%', padding: '5px', borderRadius: '4px', backgroundColor: isDark ? '#0f172a' : '#fff', color: 'inherit', border: '1px solid #64748b' }}
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    </Card>
+
+                    {/* 3. Retiring Teachers (55+) Individual Names Editor */}
+                    <Card
+                      title="3. Names & Details of Teachers Going on Retirement (Aged 55+)"
+                      isDark={isDark}
+                      rightAction={
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setEditDraft({
+                              ...editDraft,
+                              retiringTeachers: [
+                                ...(editDraft.retiringTeachers || []),
+                                {
+                                  name: '',
+                                  staffId: '',
+                                  age: 57,
+                                  dob: '',
+                                  retireYear: NOW + 3,
+                                  rank: 'PRINCIPAL SUPT.',
+                                  subject: '',
+                                  phone: '',
+                                },
+                              ],
+                            })
+                          }
+                          style={{
+                            padding: '5px 12px',
+                            borderRadius: '6px',
+                            border: 'none',
+                            backgroundColor: '#d97706',
+                            color: '#fff',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          + Add Retiring Teacher
+                        </button>
+                      }
+                    >
+                      {(editDraft.retiringTeachers || []).length === 0 ? (
+                        <div style={{ fontSize: '12.5px', color: isDark ? '#94a3b8' : '#64748b' }}>
+                          Click "+ Add Retiring Teacher" to record the full name, Staff ID, age, retirement year, rank, and phone of any teacher retiring from this school.
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {(editDraft.retiringTeachers || []).map((rt: any, rIdx: number) => (
+                            <div
+                              key={rIdx}
+                              style={{
+                                display: 'grid',
+                                gridTemplateColumns: '2fr 1.1fr 0.7fr 1.1fr 0.9fr 1.3fr 1.2fr auto',
+                                gap: '6px',
+                                alignItems: 'center',
+                              }}
+                            >
+                              <input
+                                placeholder="Full Name"
+                                value={rt.name}
+                                onChange={e => {
+                                  const next = [...editDraft.retiringTeachers];
+                                  next[rIdx] = { ...next[rIdx], name: e.target.value };
+                                  setEditDraft({ ...editDraft, retiringTeachers: next });
+                                }}
+                                style={{ padding: '6px 8px', borderRadius: '5px', backgroundColor: isDark ? '#0f172a' : '#fff', color: 'inherit', border: '1px solid #64748b', fontSize: '12px' }}
+                              />
+                              <input
+                                placeholder="Staff ID"
+                                value={rt.staffId}
+                                onChange={e => {
+                                  const next = [...editDraft.retiringTeachers];
+                                  next[rIdx] = { ...next[rIdx], staffId: e.target.value };
+                                  setEditDraft({ ...editDraft, retiringTeachers: next });
+                                }}
+                                style={{ padding: '6px 8px', borderRadius: '5px', backgroundColor: isDark ? '#0f172a' : '#fff', color: 'inherit', border: '1px solid #64748b', fontSize: '12px' }}
+                              />
+                              <input
+                                type="number"
+                                placeholder="Age"
+                                value={rt.age}
+                                onChange={e => {
+                                  const next = [...editDraft.retiringTeachers];
+                                  const aVal = num(e.target.value);
+                                  next[rIdx] = { ...next[rIdx], age: aVal, retireYear: aVal ? NOW + Math.max(0, 60 - aVal) : rt.retireYear };
+                                  setEditDraft({ ...editDraft, retiringTeachers: next });
+                                }}
+                                style={{ padding: '6px 8px', borderRadius: '5px', backgroundColor: isDark ? '#0f172a' : '#fff', color: 'inherit', border: '1px solid #64748b', fontSize: '12px', width: '100%' }}
+                              />
+                              <input
+                                placeholder="DOB (DD/MM/YYYY)"
+                                value={rt.dob}
+                                onChange={e => {
+                                  const next = [...editDraft.retiringTeachers];
+                                  next[rIdx] = { ...next[rIdx], dob: e.target.value };
+                                  setEditDraft({ ...editDraft, retiringTeachers: next });
+                                }}
+                                style={{ padding: '6px 8px', borderRadius: '5px', backgroundColor: isDark ? '#0f172a' : '#fff', color: 'inherit', border: '1px solid #64748b', fontSize: '12px' }}
+                              />
+                              <input
+                                type="number"
+                                placeholder="Retire Yr"
+                                value={rt.retireYear}
+                                onChange={e => {
+                                  const next = [...editDraft.retiringTeachers];
+                                  next[rIdx] = { ...next[rIdx], retireYear: num(e.target.value) };
+                                  setEditDraft({ ...editDraft, retiringTeachers: next });
+                                }}
+                                style={{ padding: '6px 8px', borderRadius: '5px', backgroundColor: isDark ? '#0f172a' : '#fff', color: 'inherit', border: '1px solid #64748b', fontSize: '12px', width: '100%' }}
+                              />
+                              <input
+                                placeholder="Rank"
+                                value={rt.rank}
+                                onChange={e => {
+                                  const next = [...editDraft.retiringTeachers];
+                                  next[rIdx] = { ...next[rIdx], rank: e.target.value };
+                                  setEditDraft({ ...editDraft, retiringTeachers: next });
+                                }}
+                                style={{ padding: '6px 8px', borderRadius: '5px', backgroundColor: isDark ? '#0f172a' : '#fff', color: 'inherit', border: '1px solid #64748b', fontSize: '12px' }}
+                              />
+                              <input
+                                placeholder="Subject / Phone"
+                                value={rt.subject || rt.phone}
+                                onChange={e => {
+                                  const next = [...editDraft.retiringTeachers];
+                                  next[rIdx] = { ...next[rIdx], subject: e.target.value };
+                                  setEditDraft({ ...editDraft, retiringTeachers: next });
+                                }}
+                                style={{ padding: '6px 8px', borderRadius: '5px', backgroundColor: isDark ? '#0f172a' : '#fff', color: 'inherit', border: '1px solid #64748b', fontSize: '12px' }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const next = editDraft.retiringTeachers.filter((_: any, i: number) => i !== rIdx);
+                                  setEditDraft({ ...editDraft, retiringTeachers: next });
+                                }}
+                                style={{
+                                  padding: '5px 8px',
+                                  borderRadius: '5px',
+                                  border: '1px solid #ef4444',
+                                  backgroundColor: 'transparent',
+                                  color: '#ef4444',
+                                  fontSize: '11px',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </Card>
+
+                    {/* 4. Merge Duplicate School or Delete Record */}
+                    <Card title="4. Merge Duplicate School or Remove Record" isDark={isDark}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', flex: 1 }}>
+                          <span style={{ fontSize: '12.5px' }}>Merge this school & its portal teachers into:</span>
+                          <select
+                            value={mergeTargetId}
+                            onChange={e => setMergeTargetId(e.target.value)}
+                            style={{
+                              padding: '7px 10px',
+                              borderRadius: '6px',
+                              border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                              backgroundColor: isDark ? '#0f172a' : '#fff',
+                              color: 'inherit',
+                              fontSize: '12.5px',
+                              minWidth: '260px',
+                            }}
+                          >
+                            <option value="">-- Select target school to merge into --</option>
+                            {schools
+                              .filter(x => x.id !== detailSchool.id)
+                              .map(x => (
+                                <option key={x.id} value={x.id}>
+                                  {x.name} ({x.emis} · {x.circuit})
+                                </option>
+                              ))}
+                          </select>
+                          <button
+                            type="button"
+                            disabled={!mergeTargetId || savingEdit}
+                            onClick={handleMergeSchoolIntoTarget}
+                            style={{
+                              padding: '7px 14px',
+                              borderRadius: '6px',
+                              border: 'none',
+                              backgroundColor: '#0284c7',
+                              color: '#fff',
+                              fontSize: '12.5px',
+                              fontWeight: 700,
+                              cursor: !mergeTargetId || savingEdit ? 'not-allowed' : 'pointer',
+                              opacity: !mergeTargetId || savingEdit ? 0.5 : 1,
+                            }}
+                          >
+                            Merge Into Selected School
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={savingEdit}
+                          onClick={() => handleDeleteSchoolRecord(detailSchool)}
+                          style={{
+                            padding: '7px 14px',
+                            borderRadius: '6px',
+                            border: '1px solid #ef4444',
+                            backgroundColor: 'transparent',
+                            color: '#ef4444',
+                            fontSize: '12.5px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Delete School Record
+                        </button>
+                      </div>
+                    </Card>
+
+                    {/* Save / Cancel Footer */}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                      <button
+                        type="button"
+                        onClick={() => setDetailModalMode('view')}
+                        style={{
+                          padding: '9px 18px',
+                          borderRadius: '8px',
+                          border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                          backgroundColor: 'transparent',
+                          color: isDark ? '#e2e8f0' : '#334155',
+                          fontSize: '13.5px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={savingEdit}
+                        onClick={handleSaveFullSchoolEdit}
+                        style={{
+                          padding: '9px 22px',
+                          borderRadius: '8px',
+                          border: 'none',
+                          backgroundColor: '#047857',
+                          color: '#ffffff',
+                          fontSize: '13.5px',
+                          fontWeight: 700,
+                          cursor: savingEdit ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        {savingEdit ? 'Saving Changes...' : 'Save All School & Staff Changes'}
+                      </button>
+                    </div>
+                  </div>
+                )
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MANAGE & EDIT CIRCUITS MODAL */}
+      {showCircuitModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9992,
+            backgroundColor: 'rgba(2, 6, 23, 0.76)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+          }}
+          onClick={e => {
+            if (e.target === e.currentTarget) setShowCircuitModal(false);
+          }}
+        >
+          <div
+            style={{
+              width: '94vw',
+              maxWidth: '860px',
+              maxHeight: '88vh',
+              borderRadius: '14px',
+              backgroundColor: isDark ? '#0f172a' : '#ffffff',
+              border: `1px solid ${isDark ? '#334155' : '#cbd5e1'}`,
+              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.55)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              color: isDark ? '#f8fafc' : '#0f172a',
+            }}
+          >
+            <div
+              style={{
+                padding: '16px 20px',
+                backgroundColor: isDark ? '#1e293b' : '#f8fafc',
+                borderBottom: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: '12px',
+                flexWrap: 'wrap',
+              }}
+            >
+              <div>
+                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 800 }}>
+                  Manage, Correct & Merge Circuits
+                </h2>
+                <div style={{ fontSize: '12px', color: isDark ? '#94a3b8' : '#64748b', marginTop: '2px' }}>
+                  Rename any circuit or merge duplicate circuit spellings across all schools and portal teacher submissions
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  disabled={savingEdit}
+                  onClick={handleStandardizeAllCircuitsInCloud}
+                  style={{
+                    padding: '7px 14px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    backgroundColor: '#047857',
+                    color: '#fff',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: savingEdit ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {savingEdit ? 'Standardizing...' : 'Auto-Standardize Duplicate Circuits in Cloud'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowCircuitModal(false)}
+                  style={{
+                    padding: '7px 12px',
+                    borderRadius: '8px',
+                    border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                    backgroundColor: 'transparent',
+                    color: 'inherit',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Close ✕
+                </button>
+              </div>
+            </div>
+
+            <div style={{ padding: '18px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {/* Add New Circuit */}
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <input
+                  placeholder="Add a new circuit name (e.g. TEMA NEW TOWN EAST)"
+                  value={newCustomCirName}
+                  onChange={e => setNewCustomCirName(e.target.value)}
+                  style={{
+                    flex: 1,
+                    minWidth: '240px',
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                    backgroundColor: isDark ? '#1e293b' : '#fff',
+                    color: 'inherit',
+                    fontSize: '13px',
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const c = txt(newCustomCirName).toUpperCase();
+                    if (!c) return;
+                    setCustomCircuits(prev => (prev.includes(c) ? prev : [...prev, c]));
+                    setNewCustomCirName('');
+                    showToast(`Added circuit "${c}"`);
+                  }}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    backgroundColor: '#0284c7',
+                    color: '#fff',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  + Add Circuit
+                </button>
+              </div>
+
+              {/* Existing Circuits List */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {allCircuits.map(c => {
+                  const cirSchools = schools.filter(s => s.circuit === c);
+                  const cirPupils = sum(cirSchools.map(pupils));
+                  const cirTeachers = sum(cirSchools.map(teachers));
+                  const draftVal = circuitRenameInputs[c] !== undefined ? circuitRenameInputs[c] : c;
+
+                  return (
+                    <div
+                      key={c}
+                      style={{
+                        padding: '10px 14px',
+                        borderRadius: '10px',
+                        backgroundColor: isDark ? '#1e293b' : '#f8fafc',
+                        border: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: '12px',
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <div style={{ minWidth: '220px' }}>
+                        <div style={{ fontWeight: 800, fontSize: '13.5px' }}>{c}</div>
+                        <div style={{ fontSize: '11.5px', color: isDark ? '#94a3b8' : '#64748b' }}>
+                          {cirSchools.length} schools · {cirPupils.toLocaleString()} pupils · {cirTeachers.toLocaleString()} teachers
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <input
+                          value={draftVal}
+                          onChange={e =>
+                            setCircuitRenameInputs(prev => ({
+                              ...prev,
+                              [c]: e.target.value.toUpperCase(),
+                            }))
+                          }
+                          style={{
+                            width: '260px',
+                            padding: '6px 10px',
+                            borderRadius: '6px',
+                            border: `1px solid ${isDark ? '#475569' : '#cbd5e1'}`,
+                            backgroundColor: isDark ? '#0f172a' : '#fff',
+                            color: 'inherit',
+                            fontSize: '12.5px',
+                          }}
+                        />
+                        <button
+                          type="button"
+                          disabled={savingEdit || !txt(draftVal) || txt(draftVal).toUpperCase() === c}
+                          onClick={() => handleRenameCircuit(c, draftVal)}
+                          style={{
+                            padding: '6px 14px',
+                            borderRadius: '6px',
+                            border: 'none',
+                            backgroundColor: '#047857',
+                            color: '#fff',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            cursor:
+                              savingEdit || !txt(draftVal) || txt(draftVal).toUpperCase() === c
+                                ? 'not-allowed'
+                                : 'pointer',
+                            opacity:
+                              savingEdit || !txt(draftVal) || txt(draftVal).toUpperCase() === c ? 0.45 : 1,
+                          }}
+                        >
+                          Rename / Merge Circuit
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {toastMsg && (
         <div
