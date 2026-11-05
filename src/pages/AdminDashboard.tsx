@@ -801,6 +801,20 @@ export default function AdminDashboard() {
       </header>
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
+        {/* Mobile Backdrop for Sidebar */}
+        {sidebarOpen && (
+          <div
+            className="admin-sidebar-backdrop"
+            onClick={() => setSidebarOpen(false)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(0,0,0,0.45)',
+              zIndex: 40,
+            }}
+          />
+        )}
+
         {/* Left Sidebar */}
         <aside className={`admin-sidebar ${sidebarOpen ? 'open' : 'closed'}`}>
           <div style={{ padding: '24px 16px', display: 'flex', flexDirection: 'column', gap: '8px', minWidth: '260px' }}>
@@ -867,25 +881,32 @@ export default function AdminDashboard() {
         </aside>
 
         {/* Main Content */}
-        <main className="admin-main-content" style={{ flex: 1, overflowY: 'auto', padding: '32px', minWidth: 0 }}>
-          
-          {/* Stats Overview */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '24px', gap: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#FFFFFF', padding: '10px 16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <Activity size={18} color="#10B981" />
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '10px', color: '#6B7280', textTransform: 'uppercase', fontWeight: '600' }}>Users Online</span>
-                <span style={{ fontSize: '16px', fontWeight: '800', color: '#002147' }}>{activeUsersCount} <span style={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 'normal' }}>/ {totalUsers} total</span></span>
+        <main
+          className={`admin-main-content ${activeTab === 'edms' ? 'edms-tab' : ''}`}
+          style={{ flex: 1, overflowY: 'auto', padding: activeTab === 'edms' ? 0 : '32px', minWidth: 0 }}
+        >
+          {/* Stats Overview - hidden on EDMS and cPanel tabs */}
+          {activeTab !== 'edms' && activeTab !== 'cpanel-migration' && (
+            <div
+              className="admin-stats-overview"
+              style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '24px', gap: '16px', flexWrap: 'wrap' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#FFFFFF', padding: '10px 16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                <Activity size={18} color="#10B981" />
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: '10px', color: '#6B7280', textTransform: 'uppercase', fontWeight: '600' }}>Users Online</span>
+                  <span style={{ fontSize: '16px', fontWeight: '800', color: '#002147' }}>{activeUsersCount} <span style={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 'normal' }}>/ {totalUsers} total</span></span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#FFFFFF', padding: '10px 16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                <FileText size={18} color="#002147" />
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: '10px', color: '#6B7280', textTransform: 'uppercase', fontWeight: '600' }}>Submissions</span>
+                  <span style={{ fontSize: '16px', fontWeight: '800', color: '#002147' }}>{totalSubmissions}</span>
+                </div>
               </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#FFFFFF', padding: '10px 16px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-              <FileText size={18} color="#002147" />
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '10px', color: '#6B7280', textTransform: 'uppercase', fontWeight: '600' }}>Submissions</span>
-                <span style={{ fontSize: '16px', fontWeight: '800', color: '#002147' }}>{totalSubmissions}</span>
-              </div>
-            </div>
-          </div>
+          )}
 
           {/* Tab CONTENT 1: SUBMISSIONS MONITOR */}
           {activeTab === 'submissions' && (
@@ -2143,7 +2164,7 @@ export default function AdminDashboard() {
 
         {/* Tab CONTENT: EDMS CENSUS & PLANNING MODULE */}
         {activeTab === 'edms' && (
-          <div style={{ margin: '-32px', borderRadius: '8px', overflow: 'hidden' }}>
+          <div style={{ width: '100%', minWidth: 0 }}>
             <EdmsModule
               schoolsData={schoolsData}
               submissions={submissions}

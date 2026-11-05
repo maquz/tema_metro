@@ -93,6 +93,42 @@ table.dyn-table .del-btn { color: #dc2626; background: none; border: none; curso
   .admin-main-content {
     padding: 16px !important;
   }
+  .admin-main-content.edms-tab {
+    padding: 0 !important;
+  }
+}
+
+.admin-main-content.edms-tab {
+  padding: 0 !important;
+}
+
+@media (max-width: 640px) {
+  .admin-stats-overview {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    width: 100%;
+    margin-bottom: 16px !important;
+  }
+  .admin-stats-overview > div {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+@media (min-width: 769px) {
+  .admin-sidebar-backdrop {
+    display: none !important;
+  }
+}
+
+/* Hide scrollbar for smooth horizontal nav swipe while preserving scrollability */
+.edms-nav::-webkit-scrollbar {
+  display: none;
+  height: 0;
+}
+.edms-nav {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 /* Admin Sidebar Responsive */

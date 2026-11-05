@@ -1770,8 +1770,8 @@ function Kpis({
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
-          gap: '12px',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(clamp(135px, 44vw, 210px), 1fr))',
+          gap: '10px',
         }}
       >
         {items.map(([k, v]) => {
@@ -1807,7 +1807,7 @@ function Kpis({
                   : isDark
                   ? '#1e293b'
                   : '#ffffff',
-                padding: '13px 15px',
+                padding: '12px 14px',
                 transition: 'all 0.18s ease',
                 transform: isHovered || isSelected ? 'translateY(-2px)' : 'none',
                 boxShadow:
@@ -1827,7 +1827,7 @@ function Kpis({
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
                 <span
                   style={{
-                    fontSize: '12px',
+                    fontSize: 'clamp(11px, 2.8vw, 12px)',
                     fontWeight: 600,
                     color: isSelected
                       ? isDark
@@ -1852,7 +1852,7 @@ function Kpis({
 
               <div
                 style={{
-                  fontSize: '21px',
+                  fontSize: 'clamp(18px, 4.5vw, 22px)',
                   fontWeight: 800,
                   color: isDark ? '#f8fafc' : '#0f172a',
                   lineHeight: 1.2,
@@ -3644,8 +3644,11 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
 
       {/* Horizontal Navigation Bar matching tema-metro-edms */}
       <nav
+        className="edms-nav"
         style={{
           overflowX: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          scrollbarWidth: 'none',
           borderBottom: `1px solid ${isDark ? '#334155' : '#e2e8f0'}`,
           backgroundColor: isDark ? '#1e293b' : '#ffffff',
           position: 'sticky',
@@ -3658,6 +3661,9 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
             maxWidth: '1150px',
             margin: '0 auto',
             display: 'flex',
+            width: 'max-content',
+            minWidth: '100%',
+            padding: '0 8px',
           }}
         >
           {tabs.map(([id, label, Icon]) => {
@@ -3667,13 +3673,13 @@ export default function EdmsModule({ schoolsData, submissions, onBackToAdmin }: 
                 key={id}
                 onClick={() => setTab(id)}
                 style={{
-                  flex: 1,
+                  flexShrink: 0,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '6px',
                   whiteSpace: 'nowrap',
-                  padding: '12px 14px',
+                  padding: '12px 16px',
                   fontSize: '13.5px',
                   fontWeight: active ? 700 : 500,
                   background: 'none',
